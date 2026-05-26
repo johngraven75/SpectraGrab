@@ -1,0 +1,7 @@
+bin/
+obj/
+artifacts/
+*.pfx
+*.cer
+*.msix
+*.zip

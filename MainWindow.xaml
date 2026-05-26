@@ -1,0 +1,331 @@
+<Window x:Class="SpectraGrab.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:models="clr-namespace:SpectraGrab.Models"
+        mc:Ignorable="d"
+        Title="SpectraGrab"
+        Height="860"
+        MinHeight="760"
+        Width="1280"
+        MinWidth="1100"
+        WindowStartupLocation="CenterScreen"
+        Background="#090B13">
+    <Window.Resources>
+        <DataTemplate DataType="{x:Type models:DownloadItem}">
+            <Border Background="{StaticResource PanelSoftBrush}" BorderBrush="#33405E" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,0,10">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="86" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="220" />
+                    </Grid.ColumnDefinitions>
+                    <Border Width="72" Height="48" Background="#303956" CornerRadius="6">
+                        <TextBlock Text="PLAY" Foreground="#BDEBFF" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="Bold" FontSize="11" />
+                    </Border>
+                    <StackPanel Grid.Column="1" Margin="6,0,18,0">
+                        <TextBlock Text="{Binding Title}" Foreground="{StaticResource TextBrush}" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Format}" Foreground="{StaticResource MutedTextBrush}" FontSize="12" Margin="0,3,0,7" />
+                        <ProgressBar Value="{Binding Progress}" Height="10" Foreground="#21D4FD" Background="#101522" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <StackPanel Width="112">
+                            <TextBlock Text="{Binding Status}" Foreground="{StaticResource TextBrush}" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding Speed}" Foreground="{StaticResource MutedTextBrush}" FontSize="12" />
+                            <TextBlock Text="{Binding Eta}" Foreground="{StaticResource MutedTextBrush}" FontSize="12" />
+                        </StackPanel>
+                        <Button Content="Pause" Command="{Binding DataContext.PauseSelectedCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}" />
+                        <Button Content="Remove" Command="{Binding DataContext.RemoveSelectedCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </DataTemplate>
+
+        <DataTemplate DataType="{x:Type models:DiscoveredMedia}">
+            <Border Background="{StaticResource PanelSoftBrush}" BorderBrush="#33405E" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,0,10,10" Width="265">
+                <StackPanel>
+                    <TextBlock Text="{Binding Type}" Foreground="#21D4FD" FontWeight="Bold" FontSize="12" />
+                    <TextBlock Text="{Binding Title}" Foreground="{StaticResource TextBrush}" FontWeight="SemiBold" Margin="0,5,0,4" TextWrapping="Wrap" MaxHeight="48" />
+                    <TextBlock Text="{Binding Url}" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" MaxHeight="48" />
+                    <Button Content="Add to queue" Command="{Binding DataContext.AddCrawlResultCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}" Margin="0,10,0,0" />
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.Background>
+            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                <GradientStop Color="#090B13" Offset="0" />
+                <GradientStop Color="#23133F" Offset="0.38" />
+                <GradientStop Color="#064553" Offset="0.72" />
+                <GradientStop Color="#121722" Offset="1" />
+            </LinearGradientBrush>
+        </Grid.Background>
+
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="235" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <Border Grid.Column="0" Background="#CC0D101B" BorderBrush="#25304A" BorderThickness="0,0,1,0" Padding="20">
+            <DockPanel LastChildFill="True">
+                <StackPanel DockPanel.Dock="Top">
+                    <TextBlock Text="SpectraGrab" Foreground="{StaticResource TextBrush}" FontSize="28" FontWeight="Black" />
+                    <TextBlock Text="Capture Everything. Any Format. Any Site." Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,6,0,28" />
+                    <Button Content="Home" />
+                    <Button Content="New Download" />
+                    <Button Content="Queue" />
+                    <Button Content="Crawler" />
+                    <Button Content="Library" />
+                    <Button Content="Settings" />
+                </StackPanel>
+                <StackPanel DockPanel.Dock="Bottom" VerticalAlignment="Bottom">
+                    <TextBlock Text="Engine" Foreground="#21D4FD" FontWeight="Bold" />
+                    <TextBlock Text="{Binding ToolStatus}" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" FontSize="12" Margin="0,5,0,20" />
+                    <TextBlock Text="Theme" Foreground="#21D4FD" FontWeight="Bold" />
+                    <ComboBox ItemsSource="{Binding Themes}" SelectedIndex="0" Margin="0,8,0,0" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="26">
+                <Grid Margin="0,0,0,18">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="220" />
+                        <ColumnDefinition Width="220" />
+                        <ColumnDefinition Width="220" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="Universal media command center" Foreground="{StaticResource TextBrush}" FontSize="34" FontWeight="Black" />
+                        <TextBlock Text="Download, crawl, queue, convert, and organize media from one Windows desktop app." Foreground="{StaticResource MutedTextBrush}" FontSize="15" />
+                    </StackPanel>
+                    <Border Grid.Column="1" Background="{StaticResource PanelBrush}" CornerRadius="8" Padding="16" Margin="12,0,0,0">
+                        <StackPanel>
+                            <TextBlock Text="Downloaded" Foreground="{StaticResource MutedTextBrush}" />
+                            <TextBlock Text="{Binding TotalDownloaded}" Foreground="#21D4FD" FontSize="30" FontWeight="Black" />
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="2" Background="{StaticResource PanelBrush}" CornerRadius="8" Padding="16" Margin="12,0,0,0">
+                        <StackPanel>
+                            <TextBlock Text="Active" Foreground="{StaticResource MutedTextBrush}" />
+                            <TextBlock Text="{Binding ActiveDownloads}" Foreground="#FF7A59" FontSize="30" FontWeight="Black" />
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="3" Background="{StaticResource PanelBrush}" CornerRadius="8" Padding="16" Margin="12,0,0,0">
+                        <StackPanel>
+                            <TextBlock Text="Crawler hits" Foreground="{StaticResource MutedTextBrush}" />
+                            <TextBlock Text="{Binding FoundMediaCount}" Foreground="#9DFF6E" FontSize="30" FontWeight="Black" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <TabControl>
+                    <TabItem Header="New Download">
+                        <Border Background="{StaticResource PanelBrush}" CornerRadius="8" Padding="22" Margin="0,14,0,0">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Text="Paste a video, playlist, channel, or direct media URL" Foreground="{StaticResource TextBrush}" FontSize="20" FontWeight="Bold" />
+                                <Grid Grid.Row="1" Margin="0,14,0,18">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="150" />
+                                        <ColumnDefinition Width="150" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox Text="{Binding Url, UpdateSourceTrigger=PropertyChanged}" FontSize="14" />
+                                    <Button Grid.Column="1" Content="Inspect" Command="{Binding InspectCommand}" />
+                                    <Button Grid.Column="2" Content="Download" Command="{Binding DownloadCurrentCommand}" />
+                                </Grid>
+
+                                <Grid Grid.Row="2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="360" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border Background="#AA101624" CornerRadius="8" Padding="16" MinHeight="275">
+                                        <StackPanel>
+                                            <TextBlock Text="Live preview" Foreground="#21D4FD" FontWeight="Bold" />
+                                            <Border Height="165" Background="#202940" CornerRadius="8" Margin="0,10,0,12">
+                                                <TextBlock Text="Thumbnail appears after inspection" Foreground="{StaticResource MutedTextBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                            </Border>
+                                            <TextBlock Text="{Binding CurrentMetadata.Title, FallbackValue=No media inspected}" Foreground="{StaticResource TextBrush}" FontSize="18" FontWeight="Bold" TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding CurrentMetadata.Uploader}" Foreground="{StaticResource MutedTextBrush}" Margin="0,4,0,0" />
+                                            <TextBlock Text="{Binding CurrentMetadata.Duration}" Foreground="{StaticResource MutedTextBrush}" />
+                                        </StackPanel>
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="18,0,0,0">
+                                        <TextBlock Text="Smart defaults and stream options" Foreground="{StaticResource TextBrush}" FontSize="18" FontWeight="Bold" />
+                                        <WrapPanel Margin="0,12,0,10">
+                                            <Border Background="#7B2CFF" CornerRadius="8" Padding="18" Width="150" Height="86" Margin="0,0,10,10">
+                                                <StackPanel>
+                                                    <TextBlock Text="4K / 8K" Foreground="White" FontSize="20" FontWeight="Black" />
+                                                    <TextBlock Text="Best video" Foreground="#E8E2FF" />
+                                                </StackPanel>
+                                            </Border>
+                                            <Border Background="#0974F1" CornerRadius="8" Padding="18" Width="150" Height="86" Margin="0,0,10,10">
+                                                <StackPanel>
+                                                    <TextBlock Text="1080p" Foreground="White" FontSize="20" FontWeight="Black" />
+                                                    <TextBlock Text="Balanced" Foreground="#E0F1FF" />
+                                                </StackPanel>
+                                            </Border>
+                                            <Border Background="#F72585" CornerRadius="8" Padding="18" Width="150" Height="86" Margin="0,0,10,10">
+                                                <StackPanel>
+                                                    <TextBlock Text="Audio" Foreground="White" FontSize="20" FontWeight="Black" />
+                                                    <TextBlock Text="MP3 / Opus" Foreground="#FFE0F0" />
+                                                </StackPanel>
+                                            </Border>
+                                        </WrapPanel>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="180" />
+                                            </Grid.ColumnDefinitions>
+                                            <ComboBox ItemsSource="{Binding FormatOptions}" SelectedItem="{Binding SelectedFormat}" />
+                                            <Button Grid.Column="1" Content="Add to Queue" Command="{Binding AddCurrentToQueueCommand}" />
+                                        </Grid>
+                                        <TextBlock Text="Output folder" Foreground="#21D4FD" FontWeight="Bold" Margin="0,16,0,6" />
+                                        <TextBox Text="{Binding OutputFolder, UpdateSourceTrigger=PropertyChanged}" />
+                                        <TextBlock Text="Device profile" Foreground="#21D4FD" FontWeight="Bold" Margin="0,16,0,6" />
+                                        <ComboBox ItemsSource="{Binding DeviceProfiles}" SelectedIndex="0" />
+                                    </StackPanel>
+                                </Grid>
+                            </Grid>
+                        </Border>
+                    </TabItem>
+
+                    <TabItem Header="Queue">
+                        <Border Background="{StaticResource PanelBrush}" CornerRadius="8" Padding="22" Margin="0,14,0,0">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="185" />
+                                        <ColumnDefinition Width="145" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Download queue" Foreground="{StaticResource TextBrush}" FontSize="20" FontWeight="Bold" />
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                        <TextBlock Text="Parallel" Foreground="{StaticResource MutedTextBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                        <TextBox Text="{Binding ParallelDownloads, UpdateSourceTrigger=PropertyChanged}" Width="55" />
+                                    </StackPanel>
+                                    <Button Grid.Column="2" Content="Start all" Command="{Binding StartQueueCommand}" />
+                                </Grid>
+                                <ItemsControl ItemsSource="{Binding Queue}" Margin="0,18,0,0" />
+                            </StackPanel>
+                        </Border>
+                    </TabItem>
+
+                    <TabItem Header="Crawler">
+                        <Border Background="{StaticResource PanelBrush}" CornerRadius="8" Padding="22" Margin="0,14,0,0">
+                            <StackPanel>
+                                <TextBlock Text="Crawler and media discovery" Foreground="{StaticResource TextBrush}" FontSize="20" FontWeight="Bold" />
+                                <Grid Margin="0,14,0,18">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="115" />
+                                        <ColumnDefinition Width="120" />
+                                        <ColumnDefinition Width="170" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox Text="{Binding CrawlerUrl, UpdateSourceTrigger=PropertyChanged}" />
+                                    <TextBox Grid.Column="1" Text="{Binding CrawlDepth, UpdateSourceTrigger=PropertyChanged}" Margin="8,0,0,0" />
+                                    <Button Grid.Column="2" Content="Go" Command="{Binding CrawlCommand}" />
+                                    <Button Grid.Column="3" Content="Add all" Command="{Binding AddAllCrawlResultsCommand}" />
+                                </Grid>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="260" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border Background="#AA101624" CornerRadius="8" Padding="14" MinHeight="365">
+                                        <StackPanel>
+                                            <TextBlock Text="Discovery filters" Foreground="#21D4FD" FontWeight="Bold" />
+                                            <CheckBox Content="Video" Foreground="{StaticResource TextBrush}" IsChecked="True" Margin="0,12,0,0" />
+                                            <CheckBox Content="Audio" Foreground="{StaticResource TextBrush}" IsChecked="True" Margin="0,8,0,0" />
+                                            <CheckBox Content="Images" Foreground="{StaticResource TextBrush}" IsChecked="True" Margin="0,8,0,0" />
+                                            <CheckBox Content="Subtitles" Foreground="{StaticResource TextBrush}" IsChecked="True" Margin="0,8,0,0" />
+                                            <TextBlock Text="Static HTML crawling is active. A headless browser hook is reserved for the next build." Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,22,0,0" />
+                                        </StackPanel>
+                                    </Border>
+                                    <ScrollViewer Grid.Column="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Margin="18,0,0,0" MinHeight="365">
+                                        <ItemsControl ItemsSource="{Binding CrawlResults}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <WrapPanel />
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </TabItem>
+
+                    <TabItem Header="Converter">
+                        <Border Background="{StaticResource PanelBrush}" CornerRadius="8" Padding="22" Margin="0,14,0,0">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel>
+                                    <TextBlock Text="Media converter" Foreground="{StaticResource TextBrush}" FontSize="20" FontWeight="Bold" />
+                                    <Border BorderBrush="#52607F" BorderThickness="2" CornerRadius="8" Padding="36" Margin="0,18,18,0" MinHeight="245">
+                                        <TextBlock Text="Drop local files here for the conversion queue" Foreground="{StaticResource MutedTextBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </Border>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="Presets" Foreground="#21D4FD" FontWeight="Bold" />
+                                    <ComboBox SelectedIndex="0" Margin="0,8,0,18">
+                                        <ComboBoxItem Content="MP4 H.264 AAC" />
+                                        <ComboBoxItem Content="MKV H.265 Opus" />
+                                        <ComboBoxItem Content="WebM AV1 Opus" />
+                                        <ComboBoxItem Content="GIF clip" />
+                                    </ComboBox>
+                                    <TextBlock Text="Quality" Foreground="#21D4FD" FontWeight="Bold" />
+                                    <Slider Minimum="1" Maximum="100" Value="82" Margin="0,8,0,18" />
+                                    <TextBlock Text="Post-download actions support renaming templates, organized folders, and script hooks in the app model." Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </TabItem>
+
+                    <TabItem Header="Settings">
+                        <Border Background="{StaticResource PanelBrush}" CornerRadius="8" Padding="22" Margin="0,14,0,0">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Margin="0,0,18,0">
+                                    <TextBlock Text="Automation" Foreground="{StaticResource TextBrush}" FontSize="20" FontWeight="Bold" />
+                                    <CheckBox Content="Monitor clipboard for media URLs" Foreground="{StaticResource TextBrush}" Margin="0,14,0,0" />
+                                    <CheckBox Content="Enable scheduled off-peak downloads" Foreground="{StaticResource TextBrush}" Margin="0,8,0,0" />
+                                    <CheckBox Content="Portable mode settings" Foreground="{StaticResource TextBrush}" Margin="0,8,0,0" />
+                                    <TextBlock Text="Request delay" Foreground="#21D4FD" FontWeight="Bold" Margin="0,20,0,8" />
+                                    <Slider Minimum="0" Maximum="10" Value="1" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="Privacy and security" Foreground="{StaticResource TextBrush}" FontSize="20" FontWeight="Bold" />
+                                    <CheckBox Content="Encrypt stored login secrets with Windows DPAPI" Foreground="{StaticResource TextBrush}" IsChecked="True" Margin="0,14,0,0" />
+                                    <CheckBox Content="Respect robots.txt during crawler runs" Foreground="{StaticResource TextBrush}" IsChecked="True" Margin="0,8,0,0" />
+                                    <CheckBox Content="Import Netscape cookies when needed" Foreground="{StaticResource TextBrush}" Margin="0,8,0,0" />
+                                    <TextBlock Text="No telemetry is wired. Downloads and crawler runs stay local unless the user opens a URL." Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,20,0,0" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </TabItem>
+                </TabControl>
+
+                <Border Background="#DD0C111D" BorderBrush="#25304A" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,18,0,0">
+                    <TextBlock Text="{Binding StatusMessage}" Foreground="{StaticResource TextBrush}" TextWrapping="Wrap" />
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Window>
