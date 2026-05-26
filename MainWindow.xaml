@@ -72,8 +72,12 @@
         <Border Grid.Column="0" Background="#CC0D101B" BorderBrush="#25304A" BorderThickness="0,0,1,0" Padding="20">
             <DockPanel LastChildFill="True">
                 <StackPanel DockPanel.Dock="Top">
-                    <TextBlock Text="SpectraGrab" Foreground="{StaticResource TextBrush}" FontSize="28" FontWeight="Black" />
-                    <TextBlock Text="Capture Everything. Any Format. Any Site." Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,6,0,28" />
+                    <Border Background="#AA080D18" BorderBrush="#244A77" BorderThickness="1" CornerRadius="8" Padding="6" Margin="0,0,0,14">
+                        <Image Source="pack://application:,,,/Assets/spectrasgrab.png" Stretch="Uniform" Height="118" />
+                    </Border>
+                    <TextBlock Text="Spectra-Grab 26" Foreground="{StaticResource TextBrush}" FontSize="26" FontWeight="Black" />
+                    <TextBlock Text="Ultimate Edition" Foreground="#21D4FD" FontSize="15" FontWeight="Bold" />
+                    <TextBlock Text="Capture Everything. Any Format. Any Site." Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,6,0,24" />
                     <Button Content="Home" />
                     <Button Content="New Download" />
                     <Button Content="Queue" />
@@ -100,7 +104,7 @@
                         <ColumnDefinition Width="220" />
                     </Grid.ColumnDefinitions>
                     <StackPanel>
-                        <TextBlock Text="Universal media command center" Foreground="{StaticResource TextBrush}" FontSize="34" FontWeight="Black" />
+                        <TextBlock Text="Spectra-Grab 26 Ultimate Edition" Foreground="{StaticResource TextBrush}" FontSize="34" FontWeight="Black" />
                         <TextBlock Text="Download, crawl, queue, convert, and organize media from one Windows desktop app." Foreground="{StaticResource MutedTextBrush}" FontSize="15" />
                     </StackPanel>
                     <Border Grid.Column="1" Background="{StaticResource PanelBrush}" CornerRadius="8" Padding="16" Margin="12,0,0,0">
