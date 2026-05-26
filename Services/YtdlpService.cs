@@ -9,13 +9,13 @@ namespace SpectraGrab.Services;
 
 public interface IYtdlpService
 {
-    Task<VideoMetadata> InspectAsync(string url, CancellationToken cancellationToken);
-    Task DownloadAsync(DownloadItem item, string outputFolder, string format, CancellationToken cancellationToken);
+    Task<VideoMetadata> InspectAsync(string url, DownloadOptions options, CancellationToken cancellationToken);
+    Task DownloadAsync(DownloadItem item, string outputFolder, string format, DownloadOptions options, CancellationToken cancellationToken);
     bool IsReady { get; }
     string Status { get; }
 }
 
-public sealed partial class YtdlpService(IToolLocator toolLocator) : IYtdlpService
+public sealed partial class YtdlpService(IToolLocator toolLocator, ISitePluginCatalog pluginCatalog, ICodecProfileCatalog codecProfiles) : IYtdlpService
 {
     private readonly string? ytDlpPath = toolLocator.Find("yt-dlp.exe") ?? toolLocator.Find("yt-dlp");
     private readonly string? ffmpegPath = toolLocator.Find("ffmpeg.exe") ?? toolLocator.Find("ffmpeg");
@@ -26,14 +26,16 @@ public sealed partial class YtdlpService(IToolLocator toolLocator) : IYtdlpServi
         ? "yt-dlp was not found. Install yt-dlp to enable real downloads."
         : $"yt-dlp ready at {ytDlpPath}";
 
-    public async Task<VideoMetadata> InspectAsync(string url, CancellationToken cancellationToken)
+    public async Task<VideoMetadata> InspectAsync(string url, DownloadOptions options, CancellationToken cancellationToken)
     {
         if (ytDlpPath is null)
         {
             return FallbackMetadata(url, "yt-dlp is missing");
         }
 
-        var json = await RunCaptureAsync(ytDlpPath, ["--dump-single-json", "--no-warnings", "--no-playlist", url], cancellationToken);
+        var args = BuildSiteArgs(url, options);
+        args.AddRange(["--dump-single-json", "--no-warnings", "--no-playlist", url]);
+        var json = await RunCaptureAsync(ytDlpPath, args, cancellationToken);
         using var document = JsonDocument.Parse(json);
         var root = document.RootElement;
         var title = root.GetPropertyOrDefault("title", "Untitled media");
@@ -51,7 +53,7 @@ public sealed partial class YtdlpService(IToolLocator toolLocator) : IYtdlpServi
 
         if (root.TryGetProperty("formats", out var formatsNode) && formatsNode.ValueKind == JsonValueKind.Array)
         {
-            foreach (var format in formatsNode.EnumerateArray().Take(80))
+            foreach (var format in formatsNode.EnumerateArray().Take(120))
             {
                 var id = format.GetPropertyOrDefault("format_id", string.Empty);
                 if (string.IsNullOrWhiteSpace(id))
@@ -82,7 +84,7 @@ public sealed partial class YtdlpService(IToolLocator toolLocator) : IYtdlpServi
         };
     }
 
-    public async Task DownloadAsync(DownloadItem item, string outputFolder, string format, CancellationToken cancellationToken)
+    public async Task DownloadAsync(DownloadItem item, string outputFolder, string format, DownloadOptions options, CancellationToken cancellationToken)
     {
         if (ytDlpPath is null)
         {
@@ -91,11 +93,22 @@ public sealed partial class YtdlpService(IToolLocator toolLocator) : IYtdlpServi
 
         Directory.CreateDirectory(outputFolder);
         var outputTemplate = Path.Combine(outputFolder, "%(extractor)s", "%(uploader,Unknown)s_%(title).180s_%(resolution)s.%(ext)s");
-        var args = new List<string>
-        {
+        var args = BuildSiteArgs(item.Url, options);
+        var videoCodec = codecProfiles.ResolveVideo(options.VideoCodecId);
+        var audioCodec = codecProfiles.ResolveAudio(options.AudioCodecId);
+        args.AddRange(
+        [
             "--newline",
             "--progress",
             "--continue",
+            "--retries",
+            "10",
+            "--fragment-retries",
+            "10",
+            "--extractor-retries",
+            "5",
+            "--concurrent-fragments",
+            options.AdultSiteMode ? "6" : "3",
             "--embed-thumbnail",
             "--write-subs",
             "--write-auto-subs",
@@ -104,9 +117,14 @@ public sealed partial class YtdlpService(IToolLocator toolLocator) : IYtdlpServi
             "--format",
             NormalizeFormat(format),
             "--merge-output-format",
-            "mp4",
+            videoCodec.Container,
             item.Url
-        };
+        ]);
+
+        if (videoCodec.RequiresTranscode || audioCodec.AudioEncoder != "copy")
+        {
+            args.InsertRange(args.Count - 1, BuildCodecArgs(videoCodec, audioCodec, options.Quality));
+        }
 
         if (ffmpegPath is not null)
         {
@@ -159,6 +177,90 @@ public sealed partial class YtdlpService(IToolLocator toolLocator) : IYtdlpServi
         item.Speed = "Done";
         item.Eta = "0s";
         item.OutputPath = outputFolder;
+    }
+
+    private List<string> BuildSiteArgs(string url, DownloadOptions options)
+    {
+        var profile = pluginCatalog.ResolveForUrl(url, options.SitePluginId);
+        var args = new List<string>();
+        if (options.AdultSiteMode)
+        {
+            args.AddRange(
+            [
+                "--referer",
+                url,
+                "--add-header",
+                "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36",
+                "--add-header",
+                "Accept-Language:en-US,en;q=0.9"
+            ]);
+        }
+
+        args.AddRange(profile.YtdlpArguments);
+
+        if (options.UseBrowserCookies || profile.RequiresCookies)
+        {
+            args.AddRange(["--cookies-from-browser", options.CookieBrowser.Trim().ToLowerInvariant()]);
+        }
+
+        if (options.AllowInsecureCertificates)
+        {
+            args.Add("--no-check-certificate");
+        }
+
+        return args;
+    }
+
+    private static List<string> BuildCodecArgs(CodecProfile videoCodec, AudioCodecProfile audioCodec, int quality)
+    {
+        var ffmpegArgs = new List<string>();
+        if (videoCodec.RequiresTranscode)
+        {
+            ffmpegArgs.AddRange(["-c:v", videoCodec.VideoEncoder]);
+            if (videoCodec.Id is "h264" or "h265")
+            {
+                ffmpegArgs.AddRange(["-crf", QualityToCrf(quality).ToString(CultureInfo.InvariantCulture), "-preset", "medium"]);
+            }
+            else if (videoCodec.Id == "av1")
+            {
+                ffmpegArgs.AddRange(["-crf", QualityToAv1Crf(quality).ToString(CultureInfo.InvariantCulture), "-preset", "8"]);
+            }
+            else if (videoCodec.Id == "vp9")
+            {
+                ffmpegArgs.AddRange(["-crf", QualityToVp9Crf(quality).ToString(CultureInfo.InvariantCulture), "-b:v", "0"]);
+            }
+        }
+        else
+        {
+            ffmpegArgs.AddRange(["-c:v", "copy"]);
+        }
+
+        if (audioCodec.AudioEncoder == "copy")
+        {
+            ffmpegArgs.AddRange(["-c:a", "copy"]);
+        }
+        else
+        {
+            ffmpegArgs.AddRange(["-c:a", audioCodec.AudioEncoder]);
+            if (audioCodec.Id is "aac" or "mp3")
+            {
+                ffmpegArgs.AddRange(["-b:a", QualityToAudioBitrate(quality)]);
+            }
+        }
+
+        return ["--recode-video", videoCodec.Container, "--postprocessor-args", "ffmpeg:" + string.Join(' ', ffmpegArgs)];
+    }
+
+    private static int QualityToCrf(int quality) => Math.Clamp(35 - (quality / 5), 14, 32);
+
+    private static int QualityToAv1Crf(int quality) => Math.Clamp(48 - (quality / 3), 18, 45);
+
+    private static int QualityToVp9Crf(int quality) => Math.Clamp(55 - (quality / 3), 20, 50);
+
+    private static string QualityToAudioBitrate(int quality)
+    {
+        var bitrate = Math.Clamp(96 + (quality * 2), 128, 320);
+        return $"{bitrate}k";
     }
 
     private static string NormalizeFormat(string format)
@@ -218,8 +320,8 @@ public sealed partial class YtdlpService(IToolLocator toolLocator) : IYtdlpServi
         Site = new Uri(url).Host,
         Formats =
         [
-            new("best", "Best quality", "auto", "best", "maximum", "Requires yt-dlp", null),
-            new("bestaudio/best", "Audio only", "mp3", "best audio", "audio", "Requires yt-dlp", null)
+            new("best", "Best quality", "auto", "best", "maximum", reason, null),
+            new("bestaudio/best", "Audio only", "mp3", "best audio", "audio", reason, null)
         ]
     };
 

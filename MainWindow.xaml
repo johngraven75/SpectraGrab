@@ -198,6 +198,30 @@
                                         <TextBox Text="{Binding OutputFolder, UpdateSourceTrigger=PropertyChanged}" />
                                         <TextBlock Text="Device profile" Foreground="#21D4FD" FontWeight="Bold" Margin="0,16,0,6" />
                                         <ComboBox ItemsSource="{Binding DeviceProfiles}" SelectedIndex="0" />
+                                        <TextBlock Text="Hoster plugin" Foreground="#21D4FD" FontWeight="Bold" Margin="0,16,0,6" />
+                                        <ComboBox ItemsSource="{Binding SitePlugins}" DisplayMemberPath="Name" SelectedValuePath="Id" SelectedValue="{Binding SelectedSitePluginId}" />
+                                        <Grid Margin="0,16,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Margin="0,0,8,0">
+                                                <TextBlock Text="Video codec" Foreground="#21D4FD" FontWeight="Bold" />
+                                                <ComboBox ItemsSource="{Binding VideoCodecs}" DisplayMemberPath="Name" SelectedValuePath="Id" SelectedValue="{Binding SelectedVideoCodecId}" Margin="0,6,0,0" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Margin="8,0,0,0">
+                                                <TextBlock Text="Audio codec" Foreground="#21D4FD" FontWeight="Bold" />
+                                                <ComboBox ItemsSource="{Binding AudioCodecs}" DisplayMemberPath="Name" SelectedValuePath="Id" SelectedValue="{Binding SelectedAudioCodecId}" Margin="0,6,0,0" />
+                                            </StackPanel>
+                                        </Grid>
+                                        <TextBlock Text="Codec quality" Foreground="#21D4FD" FontWeight="Bold" Margin="0,16,0,6" />
+                                        <Slider Minimum="1" Maximum="100" Value="{Binding CodecQuality}" />
+                                        <WrapPanel Margin="0,12,0,0">
+                                            <CheckBox Content="Adult site mode" Foreground="{StaticResource TextBrush}" IsChecked="{Binding AdultSiteMode}" Margin="0,0,18,0" />
+                                            <CheckBox Content="Use browser cookies" Foreground="{StaticResource TextBrush}" IsChecked="{Binding UseBrowserCookies}" Margin="0,0,18,0" />
+                                            <CheckBox Content="Allow weak certificates" Foreground="{StaticResource TextBrush}" IsChecked="{Binding AllowInsecureCertificates}" />
+                                        </WrapPanel>
+                                        <ComboBox ItemsSource="{Binding CookieBrowsers}" SelectedItem="{Binding CookieBrowser}" Margin="0,10,0,0" />
                                     </StackPanel>
                                 </Grid>
                             </Grid>
@@ -294,6 +318,7 @@
                                     <TextBlock Text="Quality" Foreground="#21D4FD" FontWeight="Bold" />
                                     <Slider Minimum="1" Maximum="100" Value="82" Margin="0,8,0,18" />
                                     <TextBlock Text="Post-download actions support renaming templates, organized folders, and script hooks in the app model." Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding CodecStatus}" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,18,0,0" />
                                 </StackPanel>
                             </Grid>
                         </Border>

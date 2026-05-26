@@ -7,7 +7,7 @@ using SpectraGrab.Services;
 
 namespace SpectraGrab.ViewModels;
 
-public sealed partial class MainViewModel(IYtdlpService downloader, ICrawlerService crawler) : ObservableObject
+public sealed partial class MainViewModel(IYtdlpService downloader, ICrawlerService crawler, ISitePluginCatalog pluginCatalog, ICodecPackService codecPack, ICodecProfileCatalog codecProfiles) : ObservableObject
 {
     private readonly CancellationTokenSource lifetime = new();
 
@@ -38,13 +38,42 @@ public sealed partial class MainViewModel(IYtdlpService downloader, ICrawlerServ
     [ObservableProperty]
     private int parallelDownloads = 2;
 
+    [ObservableProperty]
+    private bool adultSiteMode = true;
+
+    [ObservableProperty]
+    private bool useBrowserCookies;
+
+    [ObservableProperty]
+    private string cookieBrowser = "chrome";
+
+    [ObservableProperty]
+    private bool allowInsecureCertificates;
+
+    [ObservableProperty]
+    private string selectedSitePluginId = "adaptive-hoster";
+
+    [ObservableProperty]
+    private string selectedVideoCodecId = "copy";
+
+    [ObservableProperty]
+    private string selectedAudioCodecId = "copy";
+
+    [ObservableProperty]
+    private int codecQuality = 82;
+
     public ObservableCollection<DownloadItem> Queue { get; } = [];
     public ObservableCollection<DiscoveredMedia> CrawlResults { get; } = [];
     public ObservableCollection<string> Themes { get; } = ["Midnight Aurora", "Candy Pop", "Forest Morning", "OLED Black", "High Contrast"];
     public ObservableCollection<string> DeviceProfiles { get; } = ["Best quality", "Recommended for PC", "iPhone", "Android", "TV", "Audio only"];
     public ObservableCollection<string> FormatOptions { get; } = ["Best quality", "Best video + best audio", "Audio only"];
+    public ObservableCollection<string> CookieBrowsers { get; } = ["chrome", "edge", "firefox", "brave", "vivaldi", "opera"];
+    public ObservableCollection<SitePluginProfile> SitePlugins { get; } = new(pluginCatalog.Profiles);
+    public ObservableCollection<CodecProfile> VideoCodecs { get; } = new(codecProfiles.VideoCodecs);
+    public ObservableCollection<AudioCodecProfile> AudioCodecs { get; } = new(codecProfiles.AudioCodecs);
 
     public string ToolStatus => downloader.Status;
+    public string CodecStatus => codecPack.Status;
     public int TotalDownloaded => Queue.Count(item => item.Status == "Complete");
     public int ActiveDownloads => Queue.Count(item => item.Status == "Downloading");
     public int FoundMediaCount => CrawlResults.Count;
@@ -61,7 +90,7 @@ public sealed partial class MainViewModel(IYtdlpService downloader, ICrawlerServ
         await RunBusyAsync(async token =>
         {
             StatusMessage = "Inspecting media streams with yt-dlp...";
-            CurrentMetadata = await downloader.InspectAsync(Url, token);
+            CurrentMetadata = await downloader.InspectAsync(Url, CurrentDownloadOptions(), token);
             FormatOptions.Clear();
             foreach (var format in CurrentMetadata.Formats.Take(24).Select(format => format.Label).Distinct())
             {
@@ -119,7 +148,7 @@ public sealed partial class MainViewModel(IYtdlpService downloader, ICrawlerServ
                 await limiter.WaitAsync(token);
                 try
                 {
-                    await downloader.DownloadAsync(item, OutputFolder, item.Format, token);
+                    await downloader.DownloadAsync(item, OutputFolder, item.Format, CurrentDownloadOptions(), token);
                 }
                 catch (Exception ex)
                 {
@@ -240,4 +269,14 @@ public sealed partial class MainViewModel(IYtdlpService downloader, ICrawlerServ
             IsBusy = false;
         }
     }
+
+    private DownloadOptions CurrentDownloadOptions() => new(
+        AdultSiteMode,
+        UseBrowserCookies,
+        CookieBrowser,
+        AllowInsecureCertificates,
+        SelectedSitePluginId,
+        SelectedVideoCodecId,
+        SelectedAudioCodecId,
+        CodecQuality);
 }

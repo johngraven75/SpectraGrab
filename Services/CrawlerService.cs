@@ -1,6 +1,8 @@
 using HtmlAgilityPack;
 using System.IO;
+using System.Net;
 using System.Net.Http;
+using System.Text.RegularExpressions;
 using SpectraGrab.Models;
 
 namespace SpectraGrab.Services;
@@ -10,12 +12,12 @@ public interface ICrawlerService
     Task<IReadOnlyList<DiscoveredMedia>> CrawlAsync(string url, int depth, CancellationToken cancellationToken);
 }
 
-public sealed class CrawlerService : ICrawlerService
+public sealed partial class CrawlerService : ICrawlerService
 {
     private static readonly string[] MediaExtensions =
     [
-        ".mp4", ".mkv", ".webm", ".mov", ".avi", ".flv", ".m3u8", ".mpd",
-        ".mp3", ".aac", ".opus", ".flac", ".wav", ".srt", ".vtt", ".jpg", ".jpeg", ".png", ".webp", ".gif"
+        ".mp4", ".mkv", ".webm", ".mov", ".avi", ".flv", ".m4v", ".f4v", ".ts", ".m3u8", ".mpd", ".m3u", ".ism",
+        ".mp3", ".aac", ".m4a", ".opus", ".flac", ".wav", ".srt", ".vtt", ".jpg", ".jpeg", ".png", ".webp", ".gif"
     ];
 
     private readonly HttpClient httpClient = new()
@@ -54,20 +56,16 @@ public sealed class CrawlerService : ICrawlerService
             document.LoadHtml(html);
             foreach (var link in ExtractLinks(document, current))
             {
-                if (IsMedia(link))
-                {
-                    results.TryAdd(link.AbsoluteUri, new DiscoveredMedia
-                    {
-                        Title = Path.GetFileName(link.LocalPath),
-                        Url = link.AbsoluteUri,
-                        Type = DetectType(link),
-                        SourcePage = current.AbsoluteUri
-                    });
-                }
-                else if (level < depth && link.Host.Equals(root.Host, StringComparison.OrdinalIgnoreCase))
+                AddMediaResult(results, link, current);
+                if (!IsMedia(link) && level < depth && link.Host.Equals(root.Host, StringComparison.OrdinalIgnoreCase))
                 {
                     pending.Enqueue((link, level + 1));
                 }
+            }
+
+            foreach (var link in ExtractEmbeddedMediaLinks(html, current))
+            {
+                AddMediaResult(results, link, current);
             }
 
             await Task.Delay(350, cancellationToken);
@@ -78,7 +76,7 @@ public sealed class CrawlerService : ICrawlerService
 
     private static IEnumerable<Uri> ExtractLinks(HtmlDocument document, Uri baseUri)
     {
-        var attributes = new[] { "href", "src", "data-src", "poster", "content" };
+        var attributes = new[] { "href", "src", "data-src", "data-video", "data-url", "data-hls", "data-mp4", "poster", "content" };
         foreach (var node in document.DocumentNode.Descendants())
         {
             foreach (var attribute in attributes)
@@ -90,6 +88,34 @@ public sealed class CrawlerService : ICrawlerService
                 }
             }
         }
+    }
+
+    private static IEnumerable<Uri> ExtractEmbeddedMediaLinks(string html, Uri baseUri)
+    {
+        foreach (Match match in EmbeddedMediaRegex().Matches(WebUtility.HtmlDecode(html)))
+        {
+            var value = match.Groups["url"].Value.Replace("\\/", "/");
+            if (TryCreateUri(baseUri, value, out var uri))
+            {
+                yield return uri;
+            }
+        }
+    }
+
+    private static void AddMediaResult(Dictionary<string, DiscoveredMedia> results, Uri link, Uri sourcePage)
+    {
+        if (!IsMedia(link))
+        {
+            return;
+        }
+
+        results.TryAdd(link.AbsoluteUri, new DiscoveredMedia
+        {
+            Title = Path.GetFileName(link.LocalPath),
+            Url = link.AbsoluteUri,
+            Type = DetectType(link),
+            SourcePage = sourcePage.AbsoluteUri
+        });
     }
 
     private static bool TryCreateUri(Uri baseUri, string value, out Uri uri)
@@ -114,11 +140,14 @@ public sealed class CrawlerService : ICrawlerService
         var extension = Path.GetExtension(uri.AbsolutePath).ToLowerInvariant();
         return extension switch
         {
-            ".mp3" or ".aac" or ".opus" or ".flac" or ".wav" => "audio",
+            ".mp3" or ".aac" or ".m4a" or ".opus" or ".flac" or ".wav" => "audio",
             ".jpg" or ".jpeg" or ".png" or ".webp" or ".gif" => "image",
             ".srt" or ".vtt" => "subtitle",
-            ".m3u8" or ".mpd" => "manifest",
+            ".m3u8" or ".mpd" or ".m3u" or ".ism" => "manifest",
             _ => "video"
         };
     }
+
+    [GeneratedRegex(@"(?<url>https?:\\/\\/[^""'\s<>]+?\.(?:mp4|mkv|webm|mov|avi|flv|m4v|f4v|ts|m3u8|mpd|m3u|ism|mp3|aac|m4a|opus|flac|wav|srt|vtt|jpg|jpeg|png|webp|gif)(?:\?[^""'\s<>]*)?)", RegexOptions.IgnoreCase)]
+    private static partial Regex EmbeddedMediaRegex();
 }
