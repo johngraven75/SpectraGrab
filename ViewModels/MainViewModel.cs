@@ -48,6 +48,9 @@ public sealed partial class MainViewModel(IYtdlpService downloader, ICrawlerServ
     private string cookieBrowser = "chrome";
 
     [ObservableProperty]
+    private string cookieFilePath = string.Empty;
+
+    [ObservableProperty]
     private bool allowInsecureCertificates;
 
     [ObservableProperty]
@@ -274,6 +277,7 @@ public sealed partial class MainViewModel(IYtdlpService downloader, ICrawlerServ
         AdultSiteMode,
         UseBrowserCookies,
         CookieBrowser,
+        CookieFilePath,
         AllowInsecureCertificates,
         SelectedSitePluginId,
         SelectedVideoCodecId,

@@ -35,7 +35,15 @@ public sealed partial class YtdlpService(IToolLocator toolLocator, ISitePluginCa
 
         var args = BuildSiteArgs(url, options);
         args.AddRange(["--dump-single-json", "--no-warnings", "--no-playlist", url]);
-        var json = await RunCaptureAsync(ytDlpPath, args, cancellationToken);
+        string json;
+        try
+        {
+            json = await RunCaptureAsync(ytDlpPath, args, cancellationToken);
+        }
+        catch (InvalidOperationException ex) when (IsCookieDatabaseCopyError(ex.Message))
+        {
+            throw new InvalidOperationException(BuildCookieHelpMessage(options.CookieBrowser));
+        }
         using var document = JsonDocument.Parse(json);
         var root = document.RootElement;
         var title = root.GetPropertyOrDefault("title", "Untitled media");
@@ -169,6 +177,11 @@ public sealed partial class YtdlpService(IToolLocator toolLocator, ISitePluginCa
         if (process.ExitCode != 0)
         {
             item.Status = "Failed";
+            if (IsCookieDatabaseCopyError(error))
+            {
+                throw new InvalidOperationException(BuildCookieHelpMessage(options.CookieBrowser));
+            }
+
             throw new InvalidOperationException(error.Trim());
         }
 
@@ -198,7 +211,11 @@ public sealed partial class YtdlpService(IToolLocator toolLocator, ISitePluginCa
 
         args.AddRange(profile.YtdlpArguments);
 
-        if (options.UseBrowserCookies || profile.RequiresCookies)
+        if (!string.IsNullOrWhiteSpace(options.CookieFilePath) && File.Exists(options.CookieFilePath))
+        {
+            args.AddRange(["--cookies", options.CookieFilePath]);
+        }
+        else if (options.UseBrowserCookies || profile.RequiresCookies)
         {
             args.AddRange(["--cookies-from-browser", options.CookieBrowser.Trim().ToLowerInvariant()]);
         }
@@ -209,6 +226,17 @@ public sealed partial class YtdlpService(IToolLocator toolLocator, ISitePluginCa
         }
 
         return args;
+    }
+
+    private static bool IsCookieDatabaseCopyError(string message)
+    {
+        return message.Contains("Could not copy Chrome cookie database", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("Permission denied", StringComparison.OrdinalIgnoreCase) && message.Contains("Cookies", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string BuildCookieHelpMessage(string browser)
+    {
+        return $"Could not read {browser} cookies because the browser has the cookie database locked. Close all {browser} windows and try again, choose Edge/Firefox cookies, or export cookies to a Netscape cookies.txt file and enter that file path in SpectraGrab.";
     }
 
     private static List<string> BuildCodecArgs(CodecProfile videoCodec, AudioCodecProfile audioCodec, int quality)
