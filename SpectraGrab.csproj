@@ -6,10 +6,13 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <ApplicationIcon>Assets\spectragrab.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
     <SplashScreen Include="Assets\spectrasgrab.png" />
+    <Resource Include="Assets\spectragrab.ico" />
+    <Resource Include="Assets\spectragrab-icon.png" />
   </ItemGroup>
 
   <ItemGroup>
