@@ -11,6 +11,7 @@
         Width="1280"
         MinWidth="1100"
         WindowStartupLocation="CenterScreen"
+        Icon="pack://application:,,,/Assets/spectragrab.ico"
         Background="#090B13">
     <Window.Resources>
         <DataTemplate DataType="{x:Type models:DownloadItem}">
