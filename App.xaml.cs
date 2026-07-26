@@ -19,7 +19,8 @@ public partial class App : Application
         services.AddSingleton<IJDownloaderService, JDownloaderService>();
         services.AddSingleton<ICodecPackService, CodecPackService>();
         services.AddSingleton<ICodecProfileCatalog, CodecProfileCatalog>();
-        services.AddSingleton<IYtdlpService, YtdlpService>();
+        services.AddSingleton<YtdlpService>();
+        services.AddSingleton<IYtdlpService, HlsYtdlpService>();
         services.AddSingleton<ICrawlerService, CrawlerService>();
         services.AddSingleton<MainViewModel>();
         services.AddSingleton<MainWindow>();
