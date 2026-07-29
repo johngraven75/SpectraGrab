@@ -32,7 +32,12 @@ public sealed partial class CrawlerService : ICrawlerService
 
     public async Task<IReadOnlyList<DiscoveredMedia>> CrawlAsync(string url, int depth, CancellationToken cancellationToken)
     {
-        var root = new Uri(url);
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var root)
+            || (root.Scheme != Uri.UriSchemeHttp && root.Scheme != Uri.UriSchemeHttps))
+        {
+            return [];
+        }
+
         var normalizedDepth = Math.Clamp(depth, 0, 8);
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var queued = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -44,7 +49,7 @@ public sealed partial class CrawlerService : ICrawlerService
         {
             cancellationToken.ThrowIfCancellationRequested();
             var (current, level) = pending.Dequeue();
-            if (!visited.Add(NormalizePageKey(current)) || level > normalizedDepth)
+            if (level > normalizedDepth || !visited.Add(NormalizePageKey(current)))
             {
                 continue;
             }
@@ -54,7 +59,11 @@ public sealed partial class CrawlerService : ICrawlerService
             try
             {
                 using var request = new HttpRequestMessage(HttpMethod.Get, current);
-                request.Headers.Referrer = level == 0 ? null : root;
+                if (level > 0)
+                {
+                    request.Headers.Referrer = root;
+                }
+
                 using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
                 if (!response.IsSuccessStatusCode)
                 {
@@ -64,22 +73,26 @@ public sealed partial class CrawlerService : ICrawlerService
                 contentType = response.Content.Headers.ContentType?.MediaType;
                 if (IsDirectMediaContentType(contentType))
                 {
-                    AddMediaResult(results, current, current, TypeFromContentType(contentType));
+                    AddMediaResult(results, current, current, TypeFromContentType(contentType!));
                     continue;
                 }
 
-                if (contentType is not null
-                    && !contentType.Contains("html", StringComparison.OrdinalIgnoreCase)
-                    && !contentType.Contains("json", StringComparison.OrdinalIgnoreCase)
-                    && !contentType.Contains("javascript", StringComparison.OrdinalIgnoreCase)
-                    && !contentType.Contains("text", StringComparison.OrdinalIgnoreCase))
+                if (!IsTextLikeContentType(contentType))
                 {
                     continue;
                 }
 
                 html = await response.Content.ReadAsStringAsync(cancellationToken);
             }
-            catch
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (HttpRequestException)
+            {
+                continue;
+            }
+            catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
                 continue;
             }
@@ -118,12 +131,12 @@ public sealed partial class CrawlerService : ICrawlerService
                 }
             }
 
-            await Task.Delay(150, cancellationToken);
+            await Task.Delay(100, cancellationToken);
         }
 
         return results.Values
             .OrderBy(item => MediaPriority(item.Type))
-            .ThenBy(item => item.Title)
+            .ThenBy(item => item.Title, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
 
@@ -160,8 +173,7 @@ public sealed partial class CrawlerService : ICrawlerService
                 }
             }
 
-            var srcset = node.GetAttributeValue("srcset", string.Empty);
-            foreach (var candidate in ParseSrcSet(srcset))
+            foreach (var candidate in ParseSrcSet(node.GetAttributeValue("srcset", string.Empty)))
             {
                 if (TryCreateUri(baseUri, candidate, out var uri))
                 {
@@ -188,8 +200,7 @@ public sealed partial class CrawlerService : ICrawlerService
         var decoded = WebUtility.HtmlDecode(html);
         foreach (Match match in EmbeddedMediaRegex().Matches(decoded))
         {
-            var value = UnescapeUrl(match.Groups["url"].Value);
-            if (TryCreateUri(baseUri, value, out var uri))
+            if (TryCreateUri(baseUri, UnescapeUrl(match.Groups["url"].Value), out var uri))
             {
                 yield return uri;
             }
@@ -201,8 +212,7 @@ public sealed partial class CrawlerService : ICrawlerService
         var decoded = WebUtility.HtmlDecode(html);
         foreach (Match match in PlayerConfigRegex().Matches(decoded))
         {
-            var value = UnescapeUrl(match.Groups["url"].Value);
-            if (TryCreateUri(baseUri, value, out var uri))
+            if (TryCreateUri(baseUri, UnescapeUrl(match.Groups["url"].Value), out var uri))
             {
                 yield return uri;
             }
@@ -210,8 +220,7 @@ public sealed partial class CrawlerService : ICrawlerService
 
         foreach (Match match in AbsoluteMediaUrlRegex().Matches(decoded))
         {
-            var value = UnescapeUrl(match.Groups["url"].Value);
-            if (TryCreateUri(baseUri, value, out var uri))
+            if (TryCreateUri(baseUri, UnescapeUrl(match.Groups["url"].Value), out var uri))
             {
                 yield return uri;
             }
@@ -242,11 +251,10 @@ public sealed partial class CrawlerService : ICrawlerService
             return;
         }
 
-        var key = link.AbsoluteUri;
-        results.TryAdd(key, new DiscoveredMedia
+        results.TryAdd(link.AbsoluteUri, new DiscoveredMedia
         {
             Title = BuildTitle(link),
-            Url = key,
+            Url = link.AbsoluteUri,
             Type = forcedType ?? DetectType(link),
             SourcePage = sourcePage.AbsoluteUri
         });
@@ -255,12 +263,7 @@ public sealed partial class CrawlerService : ICrawlerService
     private static string BuildTitle(Uri link)
     {
         var file = Path.GetFileName(link.LocalPath);
-        if (!string.IsNullOrWhiteSpace(file))
-        {
-            return Uri.UnescapeDataString(file);
-        }
-
-        return link.Host;
+        return string.IsNullOrWhiteSpace(file) ? link.Host : Uri.UnescapeDataString(file);
     }
 
     private static bool TryCreateUri(Uri baseUri, string value, out Uri uri)
@@ -291,7 +294,7 @@ public sealed partial class CrawlerService : ICrawlerService
 
     private static bool ShouldFollowPage(Uri root, Uri candidate)
     {
-        if (IsMedia(candidate) || candidate.Scheme is not ("http" or "https"))
+        if (IsMedia(candidate))
         {
             return false;
         }
@@ -336,6 +339,13 @@ public sealed partial class CrawlerService : ICrawlerService
         return builder.Uri.AbsoluteUri.TrimEnd('/');
     }
 
+    private static bool IsTextLikeContentType(string? contentType) =>
+        string.IsNullOrWhiteSpace(contentType)
+        || contentType.Contains("html", StringComparison.OrdinalIgnoreCase)
+        || contentType.Contains("json", StringComparison.OrdinalIgnoreCase)
+        || contentType.Contains("javascript", StringComparison.OrdinalIgnoreCase)
+        || contentType.Contains("text", StringComparison.OrdinalIgnoreCase);
+
     private static bool IsDirectMediaContentType(string? contentType)
     {
         if (string.IsNullOrWhiteSpace(contentType))
@@ -357,13 +367,10 @@ public sealed partial class CrawlerService : ICrawlerService
             return "audio";
         }
 
-        if (contentType.Contains("mpegurl", StringComparison.OrdinalIgnoreCase)
-            || contentType.Contains("dash+xml", StringComparison.OrdinalIgnoreCase))
-        {
-            return "manifest";
-        }
-
-        return "video";
+        return contentType.Contains("mpegurl", StringComparison.OrdinalIgnoreCase)
+            || contentType.Contains("dash+xml", StringComparison.OrdinalIgnoreCase)
+            ? "manifest"
+            : "video";
     }
 
     private static bool IsMedia(Uri uri)
@@ -379,7 +386,8 @@ public sealed partial class CrawlerService : ICrawlerService
             || query.Contains(".mpd", StringComparison.OrdinalIgnoreCase)
             || query.Contains(".mp4", StringComparison.OrdinalIgnoreCase)
             || query.Contains("manifest", StringComparison.OrdinalIgnoreCase)
-            || query.Contains("playlist", StringComparison.OrdinalIgnoreCase) && query.Contains("m3u", StringComparison.OrdinalIgnoreCase);
+            || (query.Contains("playlist", StringComparison.OrdinalIgnoreCase)
+                && query.Contains("m3u", StringComparison.OrdinalIgnoreCase));
     }
 
     private static string DetectType(Uri uri)
@@ -408,12 +416,12 @@ public sealed partial class CrawlerService : ICrawlerService
         _ => 5
     };
 
-    [GeneratedRegex(@"(?<url>https?:\\/\\/[^\"'\s<>]+?\.(?:mp4|mkv|webm|mov|avi|flv|m4v|f4v|ts|m3u8|mpd|m3u|ism|mp3|aac|m4a|opus|flac|wav|srt|vtt|jpg|jpeg|png|webp|gif)(?:\?[^\"'\s<>]*)?)", RegexOptions.IgnoreCase)]
+    [GeneratedRegex("""(?<url>https?:\\?/\\?/[^"'\s<>]+?\.(?:mp4|mkv|webm|mov|avi|flv|m4v|f4v|ts|m3u8|mpd|m3u|ism|mp3|aac|m4a|opus|flac|wav|srt|vtt|jpg|jpeg|png|webp|gif)(?:\?[^"'\s<>]*)?)""", RegexOptions.IgnoreCase)]
     private static partial Regex EmbeddedMediaRegex();
 
-    [GeneratedRegex(@"(?:file|src|source|videoUrl|video_url|stream|streamUrl|stream_url|hls|hlsUrl|hls_url|manifest|manifestUrl|manifest_url|playlist|playlistUrl|contentUrl)\s*[:=]\s*[\"'](?<url>https?:[^\"']+)[\"']", RegexOptions.IgnoreCase)]
+    [GeneratedRegex("""(?:file|src|source|videoUrl|video_url|stream|streamUrl|stream_url|hls|hlsUrl|hls_url|manifest|manifestUrl|manifest_url|playlist|playlistUrl|contentUrl)\s*[:=]\s*["'](?<url>https?:[^"']+)["']""", RegexOptions.IgnoreCase)]
     private static partial Regex PlayerConfigRegex();
 
-    [GeneratedRegex(@"(?<url>https?:\\?/\\?/[^\"'\s<>]+(?:m3u8|mpd|mp4|webm|m4v|ts)(?:\?[^\"'\s<>]*)?)", RegexOptions.IgnoreCase)]
+    [GeneratedRegex("""(?<url>https?:\\?/\\?/[^"'\s<>]+(?:m3u8|mpd|mp4|webm|m4v|ts)(?:\?[^"'\s<>]*)?)""", RegexOptions.IgnoreCase)]
     private static partial Regex AbsoluteMediaUrlRegex();
 }
