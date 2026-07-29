@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: write
+  issues: write
 
 concurrency:
   group: dotnet-desktop-${{ github.ref }}
@@ -95,3 +96,12 @@ jobs:
             --target "${{ github.sha }}" `
             --title $title `
             --notes "Automated Windows x64 release from main. Includes the JavaScript-capable Chromium headless-browser crawler hook with static HTTP fallback."
+
+
+      - name: Report build failure
+        if: failure()
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create --title "⚠️ SpectraGrab Windows build failed — run ${{ github.run_number }}" --body "Current-commit Windows build or publication failed. Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }} Commit: ${{ github.sha }}" --label automated
