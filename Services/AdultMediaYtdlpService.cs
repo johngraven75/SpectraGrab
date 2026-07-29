@@ -36,7 +36,7 @@ public sealed class AdultMediaYtdlpService(
                 try
                 {
                     var metadata = await inner.InspectAsync(candidate.Url, effectiveOptions, cancellationToken);
-                    return metadata with { Url = url };
+                    return CopyMetadataWithOriginalUrl(metadata, url);
                 }
                 catch (InvalidOperationException candidateEx) when (ShouldTryNextCandidate(candidateEx.Message))
                 {
@@ -123,6 +123,17 @@ public sealed class AdultMediaYtdlpService(
             ? options with { SitePluginId = "generic-adult" }
             : options;
     }
+
+    private static VideoMetadata CopyMetadataWithOriginalUrl(VideoMetadata metadata, string originalUrl) => new()
+    {
+        Url = originalUrl,
+        Title = metadata.Title,
+        Uploader = metadata.Uploader,
+        Duration = metadata.Duration,
+        ThumbnailUrl = metadata.ThumbnailUrl,
+        Site = metadata.Site,
+        Formats = metadata.Formats
+    };
 
     private static bool ShouldTryDiscoveryFallback(string message)
     {
