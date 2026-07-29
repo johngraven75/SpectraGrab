@@ -10,7 +10,7 @@ namespace SpectraGrab.Services;
 /// user's default browser so the challenge can be completed normally, then
 /// the existing browser-cookie flow can be used on retry.
 /// </summary>
-public sealed class CaptchaAwareYtdlpService(HlsYtdlpService inner) : IYtdlpService
+public sealed class CaptchaAwareYtdlpService(AdultMediaYtdlpService inner) : IYtdlpService
 {
     public bool IsReady => inner.IsReady;
 
