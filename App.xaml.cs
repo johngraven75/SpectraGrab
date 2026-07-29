@@ -25,6 +25,7 @@ public partial class App : Application
         services.AddSingleton<IHeadlessBrowserService, HeadlessBrowserService>();
         services.AddSingleton<ICrawlerService, HeadlessCrawlerService>();
         services.AddSingleton<AdultMediaYtdlpService>();
+        services.AddSingleton<IAutomatedMediaService, AutomatedMediaService>();
         services.AddSingleton<IYtdlpService, CaptchaAwareYtdlpService>();
         services.AddSingleton<MainViewModel>();
         services.AddSingleton<MainWindow>();
