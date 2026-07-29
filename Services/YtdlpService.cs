@@ -101,6 +101,8 @@ public sealed partial class YtdlpService(IToolLocator toolLocator, ISitePluginCa
 
         Directory.CreateDirectory(outputFolder);
         var outputTemplate = Path.Combine(outputFolder, "%(extractor)s", "%(uploader,Unknown)s_%(title).180s_%(resolution)s.%(ext)s");
+        var profile = pluginCatalog.ResolveForUrl(item.Url, options.SitePluginId);
+        var playlistEnabled = options.AdultSiteMode && SupportsAdultPlaylists(profile.Id);
         var args = BuildSiteArgs(item.Url, options);
         var videoCodec = codecProfiles.ResolveVideo(options.VideoCodecId);
         var audioCodec = codecProfiles.ResolveAudio(options.AudioCodecId);
@@ -117,6 +119,7 @@ public sealed partial class YtdlpService(IToolLocator toolLocator, ISitePluginCa
             "5",
             "--concurrent-fragments",
             options.AdultSiteMode ? "6" : "3",
+            playlistEnabled ? "--yes-playlist" : "--no-playlist",
             "--embed-thumbnail",
             "--write-subs",
             "--write-auto-subs",
@@ -157,7 +160,7 @@ public sealed partial class YtdlpService(IToolLocator toolLocator, ISitePluginCa
             process.StartInfo.ArgumentList.Add(arg);
         }
 
-        item.Status = "Downloading";
+        item.Status = playlistEnabled ? "Downloading playlist" : "Downloading";
         process.Start();
 
         while (!process.StandardOutput.EndOfStream)
@@ -227,6 +230,19 @@ public sealed partial class YtdlpService(IToolLocator toolLocator, ISitePluginCa
 
         return args;
     }
+
+    private static bool SupportsAdultPlaylists(string profileId) => profileId is
+        "generic-adult" or
+        "pornhub" or
+        "redtube" or
+        "xhamster" or
+        "xnxx" or
+        "xvideos" or
+        "boyfriendtv" or
+        "members-cookies" or
+        "browser-auth" or
+        "direct-hls" or
+        "adaptive-hoster";
 
     private static bool IsCookieDatabaseCopyError(string message)
     {
