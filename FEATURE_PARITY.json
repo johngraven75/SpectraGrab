@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "product": "SpectraGrab",
+  "changeId": "SG-AUTO-DOWNLOAD-METADATA-001",
+  "model": "Qwen/Qwen3-4B-Instruct-2507",
+  "features": {
+    "oneLinkAutomatedDownload": "implemented",
+    "deterministicOfflineFallback": "implemented",
+    "adultMetadataVerification": "implemented",
+    "thePornDb": "implemented_requires_user_key",
+    "stashDb": "implemented_requires_user_key",
+    "providerPosterDownload": "implemented",
+    "posterPayloadValidation": "implemented",
+    "nfoSidecar": "implemented",
+    "directMedia": "implemented",
+    "hls": "platform_equivalent",
+    "drmBypass": "prohibited",
+    "captchaBypass": "prohibited"
+  },
+  "platforms": {
+    "windows": "implemented_yt_dlp_ffmpeg",
+    "android": "implemented_managed_http_hls_app_scoped_storage",
+    "ios": "implemented_managed_http_hls_app_scoped_storage"
+  }
+}
