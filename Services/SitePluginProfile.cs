@@ -98,9 +98,16 @@ public sealed class SitePluginCatalog : ISitePluginCatalog
             ["--geo-bypass", "--hls-use-mpegts"]),
         new(
             "xnxx",
-            "XNXX / XXNX typo-tolerant",
+            "XNXX / XXNX",
             "yt-dlp",
-            "Dedicated XNXX extractor support with typo-tolerant routing for XXNX input.",
+            "Dedicated XNXX-family routing with typo-tolerant XXNX host matching, referrer headers, HLS handling, retries, and optional cookies.",
+            false,
+            ["--geo-bypass", "--hls-use-mpegts"]),
+        new(
+            "xvideos",
+            "XVideos",
+            "yt-dlp",
+            "Dedicated XVideos routing using yt-dlp extraction with referrer headers, HLS handling, retries, and optional cookies.",
             false,
             ["--geo-bypass", "--hls-use-mpegts"]),
         new(
@@ -183,6 +190,13 @@ public sealed class SitePluginCatalog : ISitePluginCatalog
             if (host.Contains("xnxx") || host.Contains("xxnx"))
             {
                 return Resolve("xnxx");
+            }
+
+            if (host.Equals("xvideos.com", StringComparison.OrdinalIgnoreCase)
+                || host.EndsWith(".xvideos.com", StringComparison.OrdinalIgnoreCase)
+                || host.Contains("xvideos", StringComparison.OrdinalIgnoreCase))
+            {
+                return Resolve("xvideos");
             }
 
             if (host.Equals("boyfriend.tv", StringComparison.OrdinalIgnoreCase)
