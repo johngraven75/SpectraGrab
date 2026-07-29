@@ -104,4 +104,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh issue create --title "⚠️ SpectraGrab Windows build failed — run ${{ github.run_number }}" --body "Current-commit Windows build or publication failed. Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }} Commit: ${{ github.sha }}" --label automated
+          gh issue create --title "⚠️ SpectraGrab Windows build failed — run ${{ github.run_number }}" --body "Current-commit Windows build or publication failed. Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }} Commit: ${{ github.sha }}"
