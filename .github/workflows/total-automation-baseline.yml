@@ -1,0 +1,28 @@
+name: Total Automation Baseline
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  governance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Whitespace and patch integrity
+        run: git diff --check
+      - name: Reject unresolved merge markers
+        shell: bash
+        run: |
+          if git grep -n -E '^(<<<<<<< |>>>>>>> )' -- .; then exit 1; fi
+      - name: Detect repository stack
+        shell: bash
+        run: |
+          echo '### Repository stack detection' >> "$GITHUB_STEP_SUMMARY"
+          for marker in '*.sln' '*.csproj' 'package.json' 'Cargo.toml' 'go.mod' 'pyproject.toml' 'requirements.txt' 'gradlew' 'build.gradle' 'build.gradle.kts' 'Package.swift'; do find . -maxdepth 4 -type f -name "$marker" -print >> "$GITHUB_STEP_SUMMARY" || true; done
+      - name: Verify clean checkout state
+        shell: bash
+        run: test -z "$(git status --porcelain)"
