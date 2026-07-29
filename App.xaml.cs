@@ -21,7 +21,9 @@ public partial class App : Application
         services.AddSingleton<ICodecProfileCatalog, CodecProfileCatalog>();
         services.AddSingleton<YtdlpService>();
         services.AddSingleton<HlsYtdlpService>();
-        services.AddSingleton<ICrawlerService, CrawlerService>();
+        services.AddSingleton<CrawlerService>();
+        services.AddSingleton<IHeadlessBrowserService, HeadlessBrowserService>();
+        services.AddSingleton<ICrawlerService, HeadlessCrawlerService>();
         services.AddSingleton<AdultMediaYtdlpService>();
         services.AddSingleton<IYtdlpService, CaptchaAwareYtdlpService>();
         services.AddSingleton<MainViewModel>();
