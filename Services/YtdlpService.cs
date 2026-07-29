@@ -42,8 +42,9 @@ public sealed partial class YtdlpService(IToolLocator toolLocator, ISitePluginCa
         }
         catch (InvalidOperationException ex) when (IsCookieDatabaseCopyError(ex.Message))
         {
-            throw new InvalidOperationException(BuildCookieHelpMessage(options.CookieBrowser));
+            throw new InvalidOperationException(BuildCookieHelpMessage(options.CookieBrowser), ex);
         }
+
         using var document = JsonDocument.Parse(json);
         var root = document.RootElement;
         var title = root.GetPropertyOrDefault("title", "Untitled media");
@@ -75,8 +76,7 @@ public sealed partial class YtdlpService(IToolLocator toolLocator, ISitePluginCa
                 var videoCodec = format.GetPropertyOrDefault("vcodec", string.Empty);
                 var audioCodec = format.GetPropertyOrDefault("acodec", string.Empty);
                 var codec = string.Join(" / ", new[] { videoCodec, audioCodec }.Where(value => !string.IsNullOrWhiteSpace(value) && value != "none"));
-                var size = GetSize(format);
-                formats.Add(new MediaFormat(id, $"{resolution} {ext}".Trim(), ext, string.IsNullOrWhiteSpace(codec) ? "unknown" : codec, resolution, note, size));
+                formats.Add(new MediaFormat(id, $"{resolution} {ext}".Trim(), ext, string.IsNullOrWhiteSpace(codec) ? "unknown" : codec, resolution, note, GetSize(format)));
             }
         }
 
@@ -106,29 +106,20 @@ public sealed partial class YtdlpService(IToolLocator toolLocator, ISitePluginCa
         var args = BuildSiteArgs(item.Url, options);
         var videoCodec = codecProfiles.ResolveVideo(options.VideoCodecId);
         var audioCodec = codecProfiles.ResolveAudio(options.AudioCodecId);
-        args.AddRange(
-        [
-            "--newline",
-            "--progress",
-            "--continue",
-            "--retries",
-            "10",
-            "--fragment-retries",
-            "10",
-            "--extractor-retries",
-            "5",
-            "--concurrent-fragments",
-            options.AdultSiteMode ? "6" : "3",
+
+        args.AddRange([
+            "--newline", "--progress", "--continue",
+            "--retries", "10",
+            "--fragment-retries", "10",
+            "--extractor-retries", "5",
+            "--concurrent-fragments", options.AdultSiteMode ? "6" : "3",
             playlistEnabled ? "--yes-playlist" : "--no-playlist",
             "--embed-thumbnail",
             "--write-subs",
             "--write-auto-subs",
-            "--output",
-            outputTemplate,
-            "--format",
-            NormalizeFormat(format),
-            "--merge-output-format",
-            videoCodec.Container,
+            "--output", outputTemplate,
+            "--format", NormalizeFormat(format),
+            "--merge-output-format", videoCodec.Container,
             item.Url
         ]);
 
@@ -142,50 +133,34 @@ public sealed partial class YtdlpService(IToolLocator toolLocator, ISitePluginCa
             args.InsertRange(0, ["--ffmpeg-location", ffmpegPath]);
         }
 
-        using var process = new Process
-        {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = ytDlpPath,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            },
-            EnableRaisingEvents = true
-        };
-
-        foreach (var arg in args)
-        {
-            process.StartInfo.ArgumentList.Add(arg);
-        }
-
+        using var process = CreateProcess(ytDlpPath, args);
         item.Status = playlistEnabled ? "Downloading playlist" : "Downloading";
         process.Start();
 
-        while (!process.StandardOutput.EndOfStream)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var line = await process.StandardOutput.ReadLineAsync(cancellationToken);
-            if (line is null)
-            {
-                continue;
-            }
+        var stdoutTask = PumpProgressAsync(process.StandardOutput, item, cancellationToken);
+        var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
 
-            ApplyProgress(item, line);
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken);
+            await stdoutTask;
+            var error = await stderrTask;
+
+            if (process.ExitCode != 0)
+            {
+                item.Status = "Failed";
+                if (IsCookieDatabaseCopyError(error))
+                {
+                    throw new InvalidOperationException(BuildCookieHelpMessage(options.CookieBrowser));
+                }
+
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(error) ? $"yt-dlp failed with exit code {process.ExitCode}." : error.Trim());
+            }
         }
-
-        var error = await process.StandardError.ReadToEndAsync(cancellationToken);
-        await process.WaitForExitAsync(cancellationToken);
-        if (process.ExitCode != 0)
+        catch (OperationCanceledException)
         {
-            item.Status = "Failed";
-            if (IsCookieDatabaseCopyError(error))
-            {
-                throw new InvalidOperationException(BuildCookieHelpMessage(options.CookieBrowser));
-            }
-
-            throw new InvalidOperationException(error.Trim());
+            KillProcessTree(process);
+            throw;
         }
 
         item.Progress = 100;
@@ -201,14 +176,10 @@ public sealed partial class YtdlpService(IToolLocator toolLocator, ISitePluginCa
         var args = new List<string>();
         if (options.AdultSiteMode)
         {
-            args.AddRange(
-            [
-                "--referer",
-                url,
-                "--add-header",
-                "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36",
-                "--add-header",
-                "Accept-Language:en-US,en;q=0.9"
+            args.AddRange([
+                "--referer", url,
+                "--add-header", "User-Agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36",
+                "--add-header", "Accept-Language:en-US,en;q=0.9"
             ]);
         }
 
@@ -220,7 +191,8 @@ public sealed partial class YtdlpService(IToolLocator toolLocator, ISitePluginCa
         }
         else if (options.UseBrowserCookies || profile.RequiresCookies)
         {
-            args.AddRange(["--cookies-from-browser", options.CookieBrowser.Trim().ToLowerInvariant()]);
+            var browser = string.IsNullOrWhiteSpace(options.CookieBrowser) ? "chrome" : options.CookieBrowser.Trim().ToLowerInvariant();
+            args.AddRange(["--cookies-from-browser", browser]);
         }
 
         if (options.AllowInsecureCertificates)
@@ -231,29 +203,67 @@ public sealed partial class YtdlpService(IToolLocator toolLocator, ISitePluginCa
         return args;
     }
 
+    private static Process CreateProcess(string fileName, IEnumerable<string> arguments)
+    {
+        var process = new Process
+        {
+            StartInfo = new ProcessStartInfo
+            {
+                FileName = fileName,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            }
+        };
+
+        foreach (var argument in arguments)
+        {
+            process.StartInfo.ArgumentList.Add(argument);
+        }
+
+        return process;
+    }
+
+    private static async Task PumpProgressAsync(StreamReader reader, DownloadItem item, CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var line = await reader.ReadLineAsync(cancellationToken);
+            if (line is null)
+            {
+                break;
+            }
+            ApplyProgress(item, line);
+        }
+    }
+
+    private static void KillProcessTree(Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+        }
+        catch
+        {
+            // Best effort during cancellation; the cancellation itself remains authoritative.
+        }
+    }
+
     private static bool SupportsAdultPlaylists(string profileId) => profileId is
-        "generic-adult" or
-        "pornhub" or
-        "redtube" or
-        "xhamster" or
-        "xnxx" or
-        "xvideos" or
-        "boyfriendtv" or
-        "members-cookies" or
-        "browser-auth" or
-        "direct-hls" or
-        "adaptive-hoster";
+        "generic-adult" or "pornhub" or "redtube" or "xhamster" or "xnxx" or "xvideos" or "boyfriendtv" or
+        "members-cookies" or "browser-auth" or "direct-hls" or "adaptive-hoster";
 
-    private static bool IsCookieDatabaseCopyError(string message)
-    {
-        return message.Contains("Could not copy Chrome cookie database", StringComparison.OrdinalIgnoreCase)
-            || message.Contains("Permission denied", StringComparison.OrdinalIgnoreCase) && message.Contains("Cookies", StringComparison.OrdinalIgnoreCase);
-    }
+    private static bool IsCookieDatabaseCopyError(string message) =>
+        message.Contains("Could not copy Chrome cookie database", StringComparison.OrdinalIgnoreCase)
+        || (message.Contains("Permission denied", StringComparison.OrdinalIgnoreCase) && message.Contains("Cookies", StringComparison.OrdinalIgnoreCase));
 
-    private static string BuildCookieHelpMessage(string browser)
-    {
-        return $"Could not read {browser} cookies because the browser has the cookie database locked. Close all {browser} windows and try again, choose Edge/Firefox cookies, or export cookies to a Netscape cookies.txt file and enter that file path in SpectraGrab.";
-    }
+    private static string BuildCookieHelpMessage(string browser) =>
+        $"Could not read {browser} cookies because the browser has the cookie database locked. Close all {browser} windows and try again, choose Edge/Firefox cookies, or export cookies to a Netscape cookies.txt file and enter that file path in SpectraGrab.";
 
     private static List<string> BuildCodecArgs(CodecProfile videoCodec, AudioCodecProfile audioCodec, int quality)
     {
@@ -296,16 +306,9 @@ public sealed partial class YtdlpService(IToolLocator toolLocator, ISitePluginCa
     }
 
     private static int QualityToCrf(int quality) => Math.Clamp(35 - (quality / 5), 14, 32);
-
     private static int QualityToAv1Crf(int quality) => Math.Clamp(48 - (quality / 3), 18, 45);
-
     private static int QualityToVp9Crf(int quality) => Math.Clamp(55 - (quality / 3), 20, 50);
-
-    private static string QualityToAudioBitrate(int quality)
-    {
-        var bitrate = Math.Clamp(96 + (quality * 2), 128, 320);
-        return $"{bitrate}k";
-    }
+    private static string QualityToAudioBitrate(int quality) => $"{Math.Clamp(96 + (quality * 2), 128, 320)}k";
 
     private static string NormalizeFormat(string format)
     {
@@ -313,46 +316,36 @@ public sealed partial class YtdlpService(IToolLocator toolLocator, ISitePluginCa
         {
             return "bestaudio/best";
         }
-
         if (format.Contains("video + best audio", StringComparison.OrdinalIgnoreCase))
         {
             return "bestvideo+bestaudio/best";
         }
-
         return format.Equals("Best quality", StringComparison.OrdinalIgnoreCase) ? "bestvideo+bestaudio/best" : format;
     }
 
     private static async Task<string> RunCaptureAsync(string fileName, IReadOnlyList<string> arguments, CancellationToken cancellationToken)
     {
-        using var process = new Process
-        {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = fileName,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            }
-        };
-
-        foreach (var argument in arguments)
-        {
-            process.StartInfo.ArgumentList.Add(argument);
-        }
-
+        using var process = CreateProcess(fileName, arguments);
         process.Start();
         var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
         var errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
-        await process.WaitForExitAsync(cancellationToken);
-        var output = await outputTask;
-        var error = await errorTask;
-        if (process.ExitCode != 0)
-        {
-            throw new InvalidOperationException(string.IsNullOrWhiteSpace(error) ? "yt-dlp could not inspect this URL." : error.Trim());
-        }
 
-        return output;
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken);
+            var output = await outputTask;
+            var error = await errorTask;
+            if (process.ExitCode != 0)
+            {
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(error) ? "yt-dlp could not inspect this URL." : error.Trim());
+            }
+            return output;
+        }
+        catch (OperationCanceledException)
+        {
+            KillProcessTree(process);
+            throw;
+        }
     }
 
     private static VideoMetadata FallbackMetadata(string url, string reason) => new()
@@ -361,7 +354,7 @@ public sealed partial class YtdlpService(IToolLocator toolLocator, ISitePluginCa
         Title = "URL ready",
         Uploader = reason,
         Duration = "Unknown",
-        Site = new Uri(url).Host,
+        Site = Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Host : "Direct",
         Formats =
         [
             new("best", "Best quality", "auto", "best", "maximum", reason, null),
@@ -382,7 +375,6 @@ public sealed partial class YtdlpService(IToolLocator toolLocator, ISitePluginCa
         {
             return exactValue;
         }
-
         return format.TryGetProperty("filesize_approx", out var approx) && approx.TryGetInt64(out var approxValue) ? approxValue : null;
     }
 
@@ -392,7 +384,6 @@ public sealed partial class YtdlpService(IToolLocator toolLocator, ISitePluginCa
         {
             return "Unknown";
         }
-
         var time = TimeSpan.FromSeconds(seconds.Value);
         return time.Hours > 0 ? time.ToString(@"h\:mm\:ss", CultureInfo.InvariantCulture) : time.ToString(@"m\:ss", CultureInfo.InvariantCulture);
     }
@@ -430,8 +421,6 @@ public sealed partial class YtdlpService(IToolLocator toolLocator, ISitePluginCa
 
 internal static class JsonElementExtensions
 {
-    public static string GetPropertyOrDefault(this JsonElement element, string name, string fallback)
-    {
-        return element.TryGetProperty(name, out var node) && node.ValueKind != JsonValueKind.Null ? node.ToString() : fallback;
-    }
+    public static string GetPropertyOrDefault(this JsonElement element, string name, string fallback) =>
+        element.TryGetProperty(name, out var node) && node.ValueKind != JsonValueKind.Null ? node.ToString() : fallback;
 }
