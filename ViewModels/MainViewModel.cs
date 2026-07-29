@@ -7,7 +7,7 @@ using SpectraGrab.Services;
 
 namespace SpectraGrab.ViewModels;
 
-public sealed partial class MainViewModel(IYtdlpService downloader, ICrawlerService crawler, ISitePluginCatalog pluginCatalog, ICodecPackService codecPack, ICodecProfileCatalog codecProfiles) : ObservableObject
+public sealed partial class MainViewModel(IYtdlpService downloader, IAutomatedMediaService automation, ICrawlerService crawler, ISitePluginCatalog pluginCatalog, ICodecPackService codecPack, ICodecProfileCatalog codecProfiles) : ObservableObject
 {
     private readonly CancellationTokenSource lifetime = new();
     private readonly Dictionary<DownloadItem, CancellationTokenSource> activeDownloadTokens = [];
@@ -133,8 +133,22 @@ public sealed partial class MainViewModel(IYtdlpService downloader, ICrawlerServ
     {
         if (CurrentMetadata is null)
         {
-            StatusMessage = "Inspect a URL before downloading.";
-            return;
+            if (!IsHttpUrl(Url))
+            {
+                StatusMessage = "Enter a full HTTP or HTTPS URL first.";
+                return;
+            }
+
+            await RunBusyAsync(async token =>
+            {
+                StatusMessage = "AI automation is inspecting and planning the submitted link...";
+                CurrentMetadata = await downloader.InspectAsync(Url, CurrentDownloadOptions(), token);
+                SelectedFormat = CurrentMetadata.Formats.FirstOrDefault()?.Label ?? "Best quality";
+            });
+            if (CurrentMetadata is null)
+            {
+                return;
+            }
         }
 
         AddCurrentToQueue();
@@ -173,7 +187,16 @@ public sealed partial class MainViewModel(IYtdlpService downloader, ICrawlerServ
                 activeDownloadTokens[item] = itemToken;
             }
 
+            var aiPlan = await automation.PlanAsync(item.Url, itemToken.Token);
+            item.Status = "AI planned · downloading";
             await downloader.DownloadAsync(item, OutputFolder, item.Format, CurrentDownloadOptions(), itemToken.Token);
+            item.Status = "Verifying metadata and poster";
+            var automationResult = await automation.FinalizeAsync(item, itemToken.Token);
+            item.Status = "Complete";
+            StatusMessage = automationResult.Warnings.Count == 0
+                ? $"AI download complete: metadata and poster verified with {automationResult.AiModel}."
+                : $"Download complete with metadata warnings: {string.Join("; ", automationResult.Warnings)}";
+            _ = aiPlan;
         }
         catch (OperationCanceledException) when (itemToken?.IsCancellationRequested == true && !queueToken.IsCancellationRequested)
         {
