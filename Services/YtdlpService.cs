@@ -115,6 +115,8 @@ public sealed partial class YtdlpService(IToolLocator toolLocator, ISitePluginCa
             "--concurrent-fragments", options.AdultSiteMode ? "6" : "3",
             playlistEnabled ? "--yes-playlist" : "--no-playlist",
             "--embed-thumbnail",
+            "--write-thumbnail",
+            "--print", "after_move:SPECTRAGRAB_FILE:%(filepath)s",
             "--write-subs",
             "--write-auto-subs",
             "--output", outputTemplate,
@@ -167,7 +169,10 @@ public sealed partial class YtdlpService(IToolLocator toolLocator, ISitePluginCa
         item.Status = "Complete";
         item.Speed = "Done";
         item.Eta = "0s";
-        item.OutputPath = outputFolder;
+        if (string.IsNullOrWhiteSpace(item.OutputPath))
+        {
+            item.OutputPath = outputFolder;
+        }
     }
 
     private List<string> BuildSiteArgs(string url, DownloadOptions options)
@@ -390,6 +395,17 @@ public sealed partial class YtdlpService(IToolLocator toolLocator, ISitePluginCa
 
     private static void ApplyProgress(DownloadItem item, string line)
     {
+        const string completedFilePrefix = "SPECTRAGRAB_FILE:";
+        if (line.StartsWith(completedFilePrefix, StringComparison.Ordinal))
+        {
+            var completedPath = line[completedFilePrefix.Length..].Trim();
+            if (!string.IsNullOrWhiteSpace(completedPath))
+            {
+                item.OutputPath = completedPath;
+            }
+            return;
+        }
+
         var match = ProgressRegex().Match(line);
         if (match.Success && double.TryParse(match.Groups["percent"].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var percent))
         {
