@@ -105,9 +105,9 @@ public sealed class SitePluginCatalog : ISitePluginCatalog
             ["--geo-bypass", "--hls-use-mpegts"]),
         new(
             "boyfriendtv",
-            "BoyfriendTV adaptive",
+            "Boyfriend.tv adaptive",
             "Internal",
-            "Adaptive hoster handling for BoyfriendTV pages using referrer, crawler discovery, HLS, and optional cookies.",
+            "Boyfriend.tv page handling with page referrer, desktop user agent, optional browser/cookies.txt authentication, HLS fragment downloading, and FFmpeg fallback for unprotected streams.",
             false,
             ["--geo-bypass", "--hls-use-mpegts"]),
         new(
@@ -185,7 +185,9 @@ public sealed class SitePluginCatalog : ISitePluginCatalog
                 return Resolve("xnxx");
             }
 
-            if (host.Contains("boyfriendtv"))
+            if (host.Equals("boyfriend.tv", StringComparison.OrdinalIgnoreCase)
+                || host.EndsWith(".boyfriend.tv", StringComparison.OrdinalIgnoreCase)
+                || host.Contains("boyfriendtv", StringComparison.OrdinalIgnoreCase))
             {
                 return Resolve("boyfriendtv");
             }
