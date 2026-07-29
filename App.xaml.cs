@@ -20,7 +20,8 @@ public partial class App : Application
         services.AddSingleton<ICodecPackService, CodecPackService>();
         services.AddSingleton<ICodecProfileCatalog, CodecProfileCatalog>();
         services.AddSingleton<YtdlpService>();
-        services.AddSingleton<IYtdlpService, HlsYtdlpService>();
+        services.AddSingleton<HlsYtdlpService>();
+        services.AddSingleton<IYtdlpService, CaptchaAwareYtdlpService>();
         services.AddSingleton<ICrawlerService, CrawlerService>();
         services.AddSingleton<MainViewModel>();
         services.AddSingleton<MainWindow>();
