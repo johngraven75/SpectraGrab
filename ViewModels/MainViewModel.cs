@@ -10,6 +10,8 @@ namespace SpectraGrab.ViewModels;
 public sealed partial class MainViewModel(IYtdlpService downloader, ICrawlerService crawler, ISitePluginCatalog pluginCatalog, ICodecPackService codecPack, ICodecProfileCatalog codecProfiles) : ObservableObject
 {
     private readonly CancellationTokenSource lifetime = new();
+    private readonly Dictionary<DownloadItem, CancellationTokenSource> activeDownloadTokens = [];
+    private readonly object activeDownloadGate = new();
 
     [ObservableProperty]
     private string url = string.Empty;
@@ -78,15 +80,15 @@ public sealed partial class MainViewModel(IYtdlpService downloader, ICrawlerServ
     public string ToolStatus => downloader.Status;
     public string CodecStatus => codecPack.Status;
     public int TotalDownloaded => Queue.Count(item => item.Status == "Complete");
-    public int ActiveDownloads => Queue.Count(item => item.Status == "Downloading");
+    public int ActiveDownloads => Queue.Count(item => IsActiveStatus(item.Status));
     public int FoundMediaCount => CrawlResults.Count;
 
     [RelayCommand]
     private async Task InspectAsync()
     {
-        if (!Uri.TryCreate(Url, UriKind.Absolute, out _))
+        if (!IsHttpUrl(Url))
         {
-            StatusMessage = "Enter a full URL first.";
+            StatusMessage = "Enter a full HTTP or HTTPS URL first.";
             return;
         }
 
@@ -122,13 +124,19 @@ public sealed partial class MainViewModel(IYtdlpService downloader, ICrawlerServ
             Format = SelectedFormat,
             Status = "Queued"
         });
-        OnPropertyChanged(nameof(ActiveDownloads));
+        NotifyQueueCounts();
         StatusMessage = "Added to queue.";
     }
 
     [RelayCommand]
     private async Task DownloadCurrentAsync()
     {
+        if (CurrentMetadata is null)
+        {
+            StatusMessage = "Inspect a URL before downloading.";
+            return;
+        }
+
         AddCurrentToQueue();
         await StartQueueAsync();
     }
@@ -136,7 +144,7 @@ public sealed partial class MainViewModel(IYtdlpService downloader, ICrawlerServ
     [RelayCommand]
     private async Task StartQueueAsync()
     {
-        var items = Queue.Where(item => item.Status is "Queued" or "Paused" or "Failed").ToList();
+        var items = Queue.Where(item => item.Status is "Queued" or "Paused" or "Failed" or "CAPTCHA required").ToList();
         if (items.Count == 0)
         {
             StatusMessage = "No queued downloads to start.";
@@ -146,30 +154,56 @@ public sealed partial class MainViewModel(IYtdlpService downloader, ICrawlerServ
         await RunBusyAsync(async token =>
         {
             using var limiter = new SemaphoreSlim(Math.Clamp(ParallelDownloads, 1, 10));
-            var tasks = items.Select(async item =>
-            {
-                await limiter.WaitAsync(token);
-                try
-                {
-                    await downloader.DownloadAsync(item, OutputFolder, item.Format, CurrentDownloadOptions(), token);
-                }
-                catch (Exception ex)
-                {
-                    item.Status = "Failed";
-                    StatusMessage = ex.Message;
-                }
-                finally
-                {
-                    limiter.Release();
-                    OnPropertyChanged(nameof(TotalDownloaded));
-                    OnPropertyChanged(nameof(ActiveDownloads));
-                }
-            });
-
+            var tasks = items.Select(item => RunDownloadItemAsync(item, limiter, token));
             StatusMessage = "Download queue running.";
             await Task.WhenAll(tasks);
             StatusMessage = "Queue finished.";
         });
+    }
+
+    private async Task RunDownloadItemAsync(DownloadItem item, SemaphoreSlim limiter, CancellationToken queueToken)
+    {
+        await limiter.WaitAsync(queueToken);
+        CancellationTokenSource? itemToken = null;
+        try
+        {
+            itemToken = CancellationTokenSource.CreateLinkedTokenSource(queueToken);
+            lock (activeDownloadGate)
+            {
+                activeDownloadTokens[item] = itemToken;
+            }
+
+            await downloader.DownloadAsync(item, OutputFolder, item.Format, CurrentDownloadOptions(), itemToken.Token);
+        }
+        catch (OperationCanceledException) when (itemToken?.IsCancellationRequested == true && !queueToken.IsCancellationRequested)
+        {
+            item.Status = "Paused";
+            item.Speed = "Paused";
+            item.Eta = "—";
+        }
+        catch (OperationCanceledException) when (queueToken.IsCancellationRequested)
+        {
+            item.Status = "Cancelled";
+            throw;
+        }
+        catch (Exception ex)
+        {
+            if (item.Status != "CAPTCHA required" && item.Status != "DRM protected")
+            {
+                item.Status = "Failed";
+            }
+            StatusMessage = ex.Message;
+        }
+        finally
+        {
+            lock (activeDownloadGate)
+            {
+                activeDownloadTokens.Remove(item);
+            }
+            itemToken?.Dispose();
+            limiter.Release();
+            NotifyQueueCounts();
+        }
     }
 
     [RelayCommand]
@@ -180,8 +214,28 @@ public sealed partial class MainViewModel(IYtdlpService downloader, ICrawlerServ
             return;
         }
 
-        item.Status = "Paused";
-        StatusMessage = $"Paused {item.Title}.";
+        CancellationTokenSource? token;
+        lock (activeDownloadGate)
+        {
+            activeDownloadTokens.TryGetValue(item, out token);
+        }
+
+        if (token is null)
+        {
+            if (item.Status == "Queued")
+            {
+                item.Status = "Paused";
+                StatusMessage = $"Paused {item.Title}.";
+            }
+            else
+            {
+                StatusMessage = $"{item.Title} is not actively downloading.";
+            }
+            return;
+        }
+
+        token.Cancel();
+        StatusMessage = $"Pausing {item.Title}...";
     }
 
     [RelayCommand]
@@ -192,26 +246,33 @@ public sealed partial class MainViewModel(IYtdlpService downloader, ICrawlerServ
             return;
         }
 
+        lock (activeDownloadGate)
+        {
+            if (activeDownloadTokens.TryGetValue(item, out var token))
+            {
+                token.Cancel();
+            }
+        }
+
         Queue.Remove(item);
         StatusMessage = "Removed queue item.";
-        OnPropertyChanged(nameof(TotalDownloaded));
-        OnPropertyChanged(nameof(ActiveDownloads));
+        NotifyQueueCounts();
     }
 
     [RelayCommand]
     private async Task CrawlAsync()
     {
-        if (!Uri.TryCreate(CrawlerUrl, UriKind.Absolute, out _))
+        if (!IsHttpUrl(CrawlerUrl))
         {
-            StatusMessage = "Enter a full crawler URL first.";
+            StatusMessage = "Enter a full HTTP or HTTPS crawler URL first.";
             return;
         }
 
         await RunBusyAsync(async token =>
         {
-            StatusMessage = "Crawling page links and direct media...";
+            StatusMessage = "Deep-crawling pages, embeds, manifests, and direct media...";
             CrawlResults.Clear();
-            var results = await crawler.CrawlAsync(CrawlerUrl, Math.Clamp(CrawlDepth, 0, 4), token);
+            var results = await crawler.CrawlAsync(CrawlerUrl, Math.Clamp(CrawlDepth, 0, 8), token);
             foreach (var result in results)
             {
                 CrawlResults.Add(result);
@@ -237,18 +298,34 @@ public sealed partial class MainViewModel(IYtdlpService downloader, ICrawlerServ
             Format = media.Type == "audio" ? "Audio only" : "Best quality",
             Status = "Queued"
         });
+        NotifyQueueCounts();
         StatusMessage = "Crawler result added to queue.";
     }
 
     [RelayCommand]
     private void AddAllCrawlResults()
     {
+        var existing = Queue.Select(item => item.Url).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var added = 0;
         foreach (var media in CrawlResults)
         {
-            AddCrawlResult(media);
+            if (!existing.Add(media.Url))
+            {
+                continue;
+            }
+
+            Queue.Add(new DownloadItem
+            {
+                Title = media.Title,
+                Url = media.Url,
+                Format = media.Type == "audio" ? "Audio only" : "Best quality",
+                Status = "Queued"
+            });
+            added++;
         }
 
-        StatusMessage = $"Added {CrawlResults.Count} discovered items to the queue.";
+        NotifyQueueCounts();
+        StatusMessage = $"Added {added} new discovered items to the queue.";
     }
 
     private async Task RunBusyAsync(Func<CancellationToken, Task> work)
@@ -263,6 +340,10 @@ public sealed partial class MainViewModel(IYtdlpService downloader, ICrawlerServ
             IsBusy = true;
             await work(lifetime.Token);
         }
+        catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
+        {
+            StatusMessage = "Operation cancelled.";
+        }
         catch (Exception ex)
         {
             StatusMessage = ex.Message;
@@ -271,6 +352,21 @@ public sealed partial class MainViewModel(IYtdlpService downloader, ICrawlerServ
         {
             IsBusy = false;
         }
+    }
+
+    private static bool IsHttpUrl(string value) =>
+        Uri.TryCreate(value, UriKind.Absolute, out var uri)
+        && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+
+    private static bool IsActiveStatus(string status) =>
+        status.StartsWith("Downloading", StringComparison.OrdinalIgnoreCase)
+        || status.StartsWith("Trying discovered", StringComparison.OrdinalIgnoreCase)
+        || status.Equals("HLS fallback", StringComparison.OrdinalIgnoreCase);
+
+    private void NotifyQueueCounts()
+    {
+        OnPropertyChanged(nameof(TotalDownloaded));
+        OnPropertyChanged(nameof(ActiveDownloads));
     }
 
     private DownloadOptions CurrentDownloadOptions() => new(
