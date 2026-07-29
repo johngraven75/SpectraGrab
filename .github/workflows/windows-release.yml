@@ -1,0 +1,113 @@
+name: Windows Build and Release
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '**/*.cs'
+      - '**/*.xaml'
+      - '**/*.csproj'
+      - 'Assets/**'
+      - '.github/workflows/windows-release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-publish-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore SpectraGrab.csproj
+
+      - name: Build Release
+        run: dotnet build SpectraGrab.csproj --configuration Release --no-restore
+
+      - name: Publish Windows x64 self-contained
+        shell: pwsh
+        run: |
+          dotnet publish SpectraGrab.csproj `
+            --configuration Release `
+            --runtime win-x64 `
+            --self-contained true `
+            --output publish/win-x64 `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:DebugType=None `
+            -p:DebugSymbols=false
+
+      - name: Verify published executable
+        shell: pwsh
+        run: |
+          $exe = 'publish/win-x64/SpectraGrab.exe'
+          if (-not (Test-Path $exe)) {
+            throw "Published executable not found: $exe"
+          }
+          $file = Get-Item $exe
+          if ($file.Length -le 0) {
+            throw "Published executable is empty: $exe"
+          }
+          Write-Host "Verified $($file.FullName) ($($file.Length) bytes)"
+
+      - name: Package release bundle
+        shell: pwsh
+        run: |
+          $version = "windows-build-${{ github.run_number }}"
+          $zip = "SpectraGrab-$version-win-x64.zip"
+          Compress-Archive -Path 'publish/win-x64/*' -DestinationPath $zip -Force
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $zip" | Set-Content -Path "$zip.sha256" -Encoding ascii
+          "RELEASE_TAG=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "RELEASE_ZIP=$zip" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpectraGrab-Windows-x64
+          path: |
+            ${{ env.RELEASE_ZIP }}
+            ${{ env.RELEASE_ZIP }}.sha256
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = $env:RELEASE_TAG
+          $zip = $env:RELEASE_ZIP
+          $sha = "$zip.sha256"
+          $title = "SpectraGrab Windows $tag"
+          $notes = @"
+          Automated Windows x64 release for SpectraGrab.
+
+          - Configuration: Release
+          - Runtime: win-x64
+          - Deployment: self-contained
+          - Packaging: single-file publish bundle
+          - Commit: ${{ github.sha }}
+          "@
+
+          if (gh release view $tag --repo "${{ github.repository }}" 2>$null) {
+            gh release upload $tag $zip $sha --clobber --repo "${{ github.repository }}"
+          } else {
+            gh release create $tag $zip $sha `
+              --repo "${{ github.repository }}" `
+              --target "${{ github.sha }}" `
+              --title $title `
+              --notes $notes
+          }
