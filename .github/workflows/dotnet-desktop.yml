@@ -14,8 +14,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  issues: write
+  contents: read
 
 concurrency:
   group: dotnet-desktop-${{ github.ref }}
@@ -67,41 +66,9 @@ jobs:
           }
           Write-Host "Verified $($file.FullName) ($($file.Length) bytes)"
 
-      - name: Package Windows release
-        if: github.event_name != 'pull_request'
-        shell: pwsh
-        run: |
-          $archive = 'artifacts/SpectraGrab-Windows-x64.zip'
-          if (Test-Path $archive) { Remove-Item $archive -Force }
-          Compress-Archive -Path 'artifacts/win-x64/*' -DestinationPath $archive -CompressionLevel Optimal
-          if (-not (Test-Path $archive)) { throw "Release archive was not created." }
-
       - name: Upload Windows build artifact
         uses: actions/upload-artifact@v4
         with:
           name: SpectraGrab-Windows-x64-CI
           path: artifacts/win-x64/
           if-no-files-found: error
-
-      - name: Publish GitHub release
-        if: github.event_name != 'pull_request'
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $tag = "build-${{ github.run_number }}"
-          $title = "SpectraGrab Build ${{ github.run_number }}"
-          $archive = 'artifacts/SpectraGrab-Windows-x64.zip'
-          gh release create $tag $archive `
-            --target "${{ github.sha }}" `
-            --title $title `
-            --notes "Automated Windows x64 release from main. Includes the JavaScript-capable Chromium headless-browser crawler hook with static HTTP fallback."
-
-
-      - name: Report build failure
-        if: failure()
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh issue create --title "⚠️ SpectraGrab Windows build failed — run ${{ github.run_number }}" --body "Current-commit Windows build or publication failed. Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }} Commit: ${{ github.sha }}"
