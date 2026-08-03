@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 2,
+  "id": "theporndb",
+  "name": "ThePornDB",
+  "enabled": true,
+  "version": 2,
+  "settings": {
+    "baseUrl": "https://api.theporndb.net",
+    "credentialEnvironmentVariable": "SPECTRAGRAB_TPDB_API_KEY",
+    "credentialRequired": true,
+    "posterDownload": true
+  }
+}

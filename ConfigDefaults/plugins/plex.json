@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 2,
+  "id": "plex",
+  "name": "Plex",
+  "enabled": true,
+  "version": 2,
+  "settings": {
+    "baseUrl": "http://localhost:32400",
+    "credentialEnvironmentVariable": "SPECTRAGRAB_PLEX_TOKEN",
+    "syncEnabled": true,
+    "enabledAtStartup": true
+  }
+}

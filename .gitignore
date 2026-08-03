@@ -5,3 +5,4 @@ artifacts/
 *.cer
 *.msix
 *.zip
+*_wpftmp.csproj

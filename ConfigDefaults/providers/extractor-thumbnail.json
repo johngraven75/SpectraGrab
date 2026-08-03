@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 2,
+  "id": "extractor-thumbnail",
+  "name": "Extractor thumbnail",
+  "enabled": true,
+  "version": 2,
+  "settings": {
+    "source": "yt-dlp",
+    "credentialRequired": false,
+    "posterFallback": true
+  }
+}

@@ -53,6 +53,32 @@
                 </StackPanel>
             </Border>
         </DataTemplate>
+
+        <DataTemplate DataType="{x:Type models:CaptureSession}">
+            <Border Background="{StaticResource PanelSoftBrush}" BorderBrush="#33405E" BorderThickness="1" CornerRadius="8" Padding="14" Margin="0,0,0,10">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="260" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="{Binding SourceUrl}" Foreground="{StaticResource TextBrush}" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding PresetName}" Foreground="#21D4FD" FontSize="12" Margin="0,4,0,0" />
+                        <TextBlock Text="{Binding OutputPath}" Foreground="{StaticResource MutedTextBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,5,0,0" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <StackPanel Width="95">
+                            <TextBlock Text="{Binding Status}" Foreground="{StaticResource TextBrush}" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding Elapsed}" Foreground="{StaticResource MutedTextBrush}" FontSize="12" />
+                            <TextBlock Text="{Binding Size}" Foreground="{StaticResource MutedTextBrush}" FontSize="12" />
+                            <TextBlock Text="{Binding Speed}" Foreground="{StaticResource MutedTextBrush}" FontSize="12" />
+                        </StackPanel>
+                        <Button Content="Stop" Command="{Binding DataContext.StopCaptureCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}" />
+                        <Button Content="Remove" Command="{Binding DataContext.RemoveCaptureCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </DataTemplate>
     </Window.Resources>
 
     <Grid>
@@ -81,6 +107,7 @@
                     <TextBlock Text="Capture Everything. Any Format. Any Site." Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,6,0,24" />
                     <Button Content="Home" />
                     <Button Content="New Download" />
+                    <Button Content="Capture" />
                     <Button Content="Queue" />
                     <Button Content="Crawler" />
                     <Button Content="Library" />
@@ -106,7 +133,7 @@
                     </Grid.ColumnDefinitions>
                     <StackPanel>
                         <TextBlock Text="Spectra-Grab 26 Ultimate Edition" Foreground="{StaticResource TextBrush}" FontSize="34" FontWeight="Black" />
-                        <TextBlock Text="Download, crawl, queue, convert, and organize media from one Windows desktop app." Foreground="{StaticResource MutedTextBrush}" FontSize="15" />
+                        <TextBlock Text="Download, capture, crawl, queue, convert, and organize media from one Windows desktop app." Foreground="{StaticResource MutedTextBrush}" FontSize="15" />
                     </StackPanel>
                     <Border Grid.Column="1" Background="{StaticResource PanelBrush}" CornerRadius="8" Padding="16" Margin="12,0,0,0">
                         <StackPanel>
@@ -128,7 +155,7 @@
                     </Border>
                 </Grid>
 
-                <TabControl>
+                <TabControl x:Name="MainTabControl">
                     <TabItem Header="New Download">
                         <Border Background="{StaticResource PanelBrush}" CornerRadius="8" Padding="22" Margin="0,14,0,0">
                             <Grid>
@@ -228,6 +255,56 @@
                                     </StackPanel>
                                 </Grid>
                             </Grid>
+                        </Border>
+                    </TabItem>
+
+                    <TabItem Header="Capture">
+                        <Border Background="{StaticResource PanelBrush}" CornerRadius="8" Padding="22" Margin="0,14,0,0">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="220" />
+                                        <ColumnDefinition Width="150" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel>
+                                        <TextBlock Text="Live stream capture" Foreground="{StaticResource TextBrush}" FontSize="20" FontWeight="Bold" />
+                                        <TextBlock Text="Record an HTTP/HTTPS HLS or compatible live stream to a local file with FFmpeg." Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,5,0,0" />
+                                    </StackPanel>
+                                    <Border Grid.Column="1" Background="#18243A" CornerRadius="8" Padding="12" Margin="12,0,0,0">
+                                        <StackPanel>
+                                            <TextBlock Text="Active captures" Foreground="{StaticResource MutedTextBrush}" />
+                                            <TextBlock Text="{Binding ActiveCaptureCount}" Foreground="#FF7A59" FontSize="24" FontWeight="Black" />
+                                        </StackPanel>
+                                    </Border>
+                                    <Button Grid.Column="2" Content="Start Capture" Command="{Binding StartCaptureCommand}" Margin="12,0,0,0" />
+                                </Grid>
+
+                                <Grid Margin="0,18,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="280" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Margin="0,0,12,0">
+                                        <TextBlock Text="Stream URL" Foreground="#21D4FD" FontWeight="Bold" Margin="0,0,0,6" />
+                                        <TextBox Text="{Binding CaptureUrl, UpdateSourceTrigger=PropertyChanged}" FontSize="14" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="Capture format" Foreground="#21D4FD" FontWeight="Bold" Margin="0,0,0,6" />
+                                        <ComboBox ItemsSource="{Binding CapturePresets}" DisplayMemberPath="Name" SelectedValuePath="Id" SelectedValue="{Binding SelectedCapturePresetId}" />
+                                    </StackPanel>
+                                </Grid>
+
+                                <TextBlock Text="Output folder" Foreground="#21D4FD" FontWeight="Bold" Margin="0,4,0,6" />
+                                <TextBox Text="{Binding OutputFolder, UpdateSourceTrigger=PropertyChanged}" />
+                                <TextBlock Text="{Binding CaptureToolStatus}" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,10,0,0" />
+                                <Border Background="#151C2B" BorderBrush="#33405E" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,14,0,14">
+                                    <TextBlock Text="Capture supports public streams and media you are authorized to record. It does not bypass DRM, paywalls, access controls, or authentication requirements." Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" />
+                                </Border>
+
+                                <TextBlock Text="Capture sessions" Foreground="{StaticResource TextBrush}" FontSize="18" FontWeight="Bold" Margin="0,0,0,12" />
+                                <ItemsControl ItemsSource="{Binding CaptureSessions}" />
+                            </StackPanel>
                         </Border>
                     </TabItem>
 
@@ -348,6 +425,8 @@
                                     <CheckBox Content="Respect robots.txt during crawler runs" Foreground="{StaticResource TextBrush}" IsChecked="True" Margin="0,8,0,0" />
                                     <CheckBox Content="Import Netscape cookies when needed" Foreground="{StaticResource TextBrush}" Margin="0,8,0,0" />
                                     <TextBlock Text="No telemetry is wired. Downloads and crawler runs stay local unless the user opens a URL." Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,20,0,0" />
+                                    <TextBlock Text="Persistent provider and add-in configuration" Foreground="#21D4FD" FontWeight="Bold" Margin="0,20,0,6" />
+                                    <TextBlock Text="{Binding IntegrationConfigStatus}" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" />
                                 </StackPanel>
                             </Grid>
                         </Border>
