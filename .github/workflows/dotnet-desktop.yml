@@ -7,6 +7,8 @@ on:
       - '**/*.cs'
       - '**/*.xaml'
       - '**/*.csproj'
+      - 'ConfigDefaults/**'
+      - 'scripts/validate-persistent-configs.*'
       - 'Assets/**'
       - '.github/workflows/dotnet-desktop.yml'
   pull_request:
@@ -34,6 +36,10 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+
+      - name: Validate packaged provider and add-in configs
+        shell: pwsh
+        run: ./scripts/validate-persistent-configs.ps1
 
       - name: Restore
         run: dotnet restore SpectraGrab.csproj

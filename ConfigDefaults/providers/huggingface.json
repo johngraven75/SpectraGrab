@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 2,
+  "id": "huggingface",
+  "name": "Hugging Face automation",
+  "enabled": true,
+  "version": 2,
+  "settings": {
+    "endpoint": "https://router.huggingface.co/v1/chat/completions",
+    "model": "Qwen/Qwen3-4B-Instruct-2507",
+    "credentialEnvironmentVariable": "SPECTRAGRAB_HF_TOKEN",
+    "credentialRequired": false
+  }
+}

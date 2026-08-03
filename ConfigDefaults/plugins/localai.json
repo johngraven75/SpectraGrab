@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 2,
+  "id": "localai",
+  "name": "Local AI",
+  "enabled": true,
+  "version": 2,
+  "settings": {
+    "endpoint": "http://localhost:8080",
+    "model": "default",
+    "enabledForMetadata": true,
+    "enabledAtStartup": true
+  }
+}

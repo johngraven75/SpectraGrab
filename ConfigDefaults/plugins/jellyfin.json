@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 2,
+  "id": "jellyfin",
+  "name": "Jellyfin",
+  "enabled": true,
+  "version": 2,
+  "settings": {
+    "baseUrl": "http://localhost:8096",
+    "credentialEnvironmentVariable": "SPECTRAGRAB_JELLYFIN_API_KEY",
+    "syncEnabled": true,
+    "enabledAtStartup": true
+  }
+}

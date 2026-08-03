@@ -14,6 +14,10 @@
     <SplashScreen Include="Assets\spectrasgrab.png" />
     <Resource Include="Assets\spectragrab.ico" />
     <Resource Include="Assets\spectragrab-icon.png" />
+    <Content Include="ConfigDefaults\**\*.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>

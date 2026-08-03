@@ -21,15 +21,17 @@ The three applications must stay aligned on:
 3. Generic provider fallback and embedded-player discovery.
 4. Direct media downloads.
 5. HLS (`m3u8`) and DASH (`mpd`) discovery/download support.
-6. Playlist and multi-entry download support.
-7. Deep crawler behavior, bounded recursion, deduplication, and media prioritization.
-8. Authenticated browser/session import only where the platform permits authorized session sharing.
-9. CAPTCHA detection with human-in-the-loop completion; no automated solving or bypass.
-10. Queue management, pause/cancel/resume semantics, progress, retries, and error reporting.
-11. Video/audio format and quality selection.
-12. FFmpeg-backed merge/transcode behavior where packaged and supported.
-13. Provider profiles and generic adult-media routing for public or authorized content.
-14. No DRM, paywall, credential, access-control, or CAPTCHA circumvention.
+6. Live-stream capture with elapsed time, bytes written, output status, and safe stop/finalization semantics.
+7. Playlist and multi-entry download support.
+8. Deep crawler behavior, bounded recursion, deduplication, and media prioritization.
+9. Authenticated browser/session import only where the platform permits authorized session sharing.
+10. CAPTCHA detection with human-in-the-loop completion; no automated solving or bypass.
+11. Queue management, pause/cancel/resume semantics, progress, retries, and error reporting.
+12. Video/audio format and quality selection.
+13. FFmpeg-backed merge/transcode behavior where packaged and supported.
+14. Provider profiles and generic adult-media routing for public or authorized content.
+15. No DRM, paywall, credential, access-control, or CAPTCHA circumvention.
+16. Versioned provider and add-in JSON configuration that survives application upgrades, repairs invalid files safely, and keeps credentials in platform-secure storage or environment variables.
 
 ## Platform constraints
 

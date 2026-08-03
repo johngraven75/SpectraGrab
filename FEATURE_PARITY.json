@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "product": "SpectraGrab",
-  "changeId": "SG-AUTO-DOWNLOAD-METADATA-001",
+  "changeId": "SG-CAPTURE-CONFIG-002",
   "model": "Qwen/Qwen3-4B-Instruct-2507",
   "features": {
     "oneLinkAutomatedDownload": "implemented",
@@ -14,6 +14,9 @@
     "nfoSidecar": "implemented",
     "directMedia": "implemented",
     "hls": "platform_equivalent",
+    "liveStreamCapture": "implemented_all_platforms",
+    "persistentProviderConfigs": "implemented_all_platforms",
+    "persistentAddInConfigs": "implemented_emby_jellyfin_plex_localai_quickconnect",
     "drmBypass": "prohibited",
     "captchaBypass": "prohibited"
   },

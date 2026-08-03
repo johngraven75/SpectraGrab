@@ -5,6 +5,7 @@ using System.Net.Http.Headers;
 using System.Security;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using SpectraGrab.Models;
 
 namespace SpectraGrab.Services;
@@ -31,9 +32,16 @@ public sealed class AutomatedMediaService : IAutomatedMediaService
     public const string Model = "Qwen/Qwen3-4B-Instruct-2507";
     private const long MaxPosterBytes = 25L * 1024L * 1024L;
     private readonly HttpClient client = new() { Timeout = TimeSpan.FromSeconds(20) };
+    private readonly IPersistentConfigService persistentConfigs;
+
+    public AutomatedMediaService(IPersistentConfigService persistentConfigs)
+    {
+        this.persistentConfigs = persistentConfigs;
+    }
 
     public async Task<string> PlanAsync(string url, CancellationToken cancellationToken)
     {
+        persistentConfigs.EnsureInitialized();
         var fallback = JsonSerializer.Serialize(new
         {
             mediaKind = IsManifest(url) ? "adaptive_stream" : "web_media",
@@ -43,19 +51,20 @@ public sealed class AutomatedMediaService : IAutomatedMediaService
             protectedContentPolicy = "reject_drm_paywall_access_control_and_automated_captcha_bypass"
         });
 
-        var token = FirstEnvironmentValue("SPECTRAGRAB_HF_TOKEN", "HF_TOKEN");
-        if (string.IsNullOrWhiteSpace(token))
+        var hfConfig = persistentConfigs.LoadProviderConfig("huggingface");
+        var token = FirstEnvironmentValue(Setting(hfConfig, "credentialEnvironmentVariable", "SPECTRAGRAB_HF_TOKEN"), "HF_TOKEN");
+        if (!hfConfig.Enabled || string.IsNullOrWhiteSpace(token))
         {
             return fallback;
         }
 
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Post, "https://router.huggingface.co/v1/chat/completions");
+            using var request = new HttpRequestMessage(HttpMethod.Post, Setting(hfConfig, "endpoint", "https://router.huggingface.co/v1/chat/completions"));
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             request.Content = JsonContent.Create(new
             {
-                model = Model,
+                model = Setting(hfConfig, "model", Model),
                 messages = new object[]
                 {
                     new { role = "system", content = "Classify lawful media downloads. Return compact JSON only. Never recommend DRM, paywall, access-control, credential, or CAPTCHA bypass." },
@@ -100,13 +109,14 @@ public sealed class AutomatedMediaService : IAutomatedMediaService
         var metadata = new ProviderMetadata(item.Title, null, item.ThumbnailUrl, null, "Adult", null);
         if (adult)
         {
-            var tpdbKey = FirstEnvironmentValue("SPECTRAGRAB_TPDB_API_KEY", "TPDB_API_KEY");
-            if (!string.IsNullOrWhiteSpace(tpdbKey))
+            var tpdbConfig = persistentConfigs.LoadProviderConfig("theporndb");
+            var tpdbKey = FirstEnvironmentValue(Setting(tpdbConfig, "credentialEnvironmentVariable", "SPECTRAGRAB_TPDB_API_KEY"), "TPDB_API_KEY");
+            if (tpdbConfig.Enabled && !string.IsNullOrWhiteSpace(tpdbKey))
             {
                 providers.Add("ThePornDB");
                 try
                 {
-                    metadata = Merge(await FetchTpdbAsync(item.Title, tpdbKey, cancellationToken), metadata);
+                    metadata = Merge(await FetchTpdbAsync(item.Title, tpdbKey, Setting(tpdbConfig, "baseUrl", "https://api.theporndb.net"), cancellationToken), metadata);
                 }
                 catch (Exception ex)
                 {
@@ -114,13 +124,14 @@ public sealed class AutomatedMediaService : IAutomatedMediaService
                 }
             }
 
-            var stashKey = FirstEnvironmentValue("SPECTRAGRAB_STASHDB_API_KEY", "STASHDB_API_KEY");
-            if (!string.IsNullOrWhiteSpace(stashKey))
+            var stashConfig = persistentConfigs.LoadProviderConfig("stashdb");
+            var stashKey = FirstEnvironmentValue(Setting(stashConfig, "credentialEnvironmentVariable", "SPECTRAGRAB_STASHDB_API_KEY"), "STASHDB_API_KEY");
+            if (stashConfig.Enabled && !string.IsNullOrWhiteSpace(stashKey))
             {
                 providers.Add("StashDB");
                 try
                 {
-                    metadata = Merge(await FetchStashDbAsync(item.Title, stashKey, cancellationToken), metadata);
+                    metadata = Merge(await FetchStashDbAsync(item.Title, stashKey, Setting(stashConfig, "endpoint", "https://stashdb.org/graphql"), cancellationToken), metadata);
                 }
                 catch (Exception ex)
                 {
@@ -155,9 +166,10 @@ public sealed class AutomatedMediaService : IAutomatedMediaService
             warnings);
     }
 
-    private async Task<ProviderMetadata> FetchTpdbAsync(string title, string apiKey, CancellationToken token)
+    private async Task<ProviderMetadata> FetchTpdbAsync(string title, string apiKey, string baseUrl, CancellationToken token)
     {
-        var searchUrl = $"https://api.theporndb.net/scenes?parse={Uri.EscapeDataString(title)}&hash=&year=";
+        baseUrl = baseUrl.TrimEnd('/');
+        var searchUrl = $"{baseUrl}/scenes?parse={Uri.EscapeDataString(title)}&hash=&year=";
         using var searchRequest = new HttpRequestMessage(HttpMethod.Get, searchUrl);
         searchRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey.Trim());
         using var searchResponse = await client.SendAsync(searchRequest, token);
@@ -172,7 +184,7 @@ public sealed class AutomatedMediaService : IAutomatedMediaService
             return ProviderMetadata.Empty;
         }
 
-        using var detailRequest = new HttpRequestMessage(HttpMethod.Get, $"https://api.theporndb.net/scenes/{id}");
+        using var detailRequest = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/scenes/{id}");
         detailRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey.Trim());
         using var detailResponse = await client.SendAsync(detailRequest, token);
         detailResponse.EnsureSuccessStatusCode();
@@ -187,9 +199,9 @@ public sealed class AutomatedMediaService : IAutomatedMediaService
             GetString(detail, "uuid"));
     }
 
-    private async Task<ProviderMetadata> FetchStashDbAsync(string title, string apiKey, CancellationToken token)
+    private async Task<ProviderMetadata> FetchStashDbAsync(string title, string apiKey, string endpoint, CancellationToken token)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, "https://stashdb.org/graphql");
+        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
         request.Headers.Add("ApiKey", apiKey.Trim());
         request.Content = JsonContent.Create(new
         {
@@ -310,6 +322,11 @@ public sealed class AutomatedMediaService : IAutomatedMediaService
 
     private static string? FirstEnvironmentValue(params string[] names) =>
         names.Select(Environment.GetEnvironmentVariable).FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+
+    private static string Setting(ProviderConfig config, string key, string fallback) =>
+        config.Settings[key] is JsonValue value && value.TryGetValue<string>(out var setting) && !string.IsNullOrWhiteSpace(setting)
+            ? setting
+            : fallback;
 
     private static string? GetString(JsonElement value, string name) =>
         value.TryGetProperty(name, out var node) && node.ValueKind == JsonValueKind.String ? node.GetString() : null;
