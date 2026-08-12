@@ -1,14 +1,8 @@
 name: Windows Build and Release
 
 on:
-  push:
-    branches: [ main ]
-    paths:
-      - '**/*.cs'
-      - '**/*.xaml'
-      - '**/*.csproj'
-      - 'Assets/**'
-      - '.github/workflows/windows-release.yml'
+  # Alternate release path retained for manual recovery. dotnet-desktop.yml owns
+  # main-branch CI/release to prevent duplicate Windows builds and release races.
   workflow_dispatch:
 
 permissions:
