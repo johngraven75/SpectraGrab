@@ -1,0 +1,193 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: King Supreme Leader Juan Carlos <jgraven75@gmail.com>
+Date: Sun, 4 Oct 2026 01:40:00 -0400
+Subject: [PATCH] Add HLS packet handling and downloader to SpectraGrab
+
+---
+ SpectraGrab/HLS/HlsAssembler.cs        | 55 ++++++++++++++++++++++++++
+ SpectraGrab/HLS/HlsPacketDownloader.cs | 79 ++++++++++++++++++++++++++++++++++
+ SpectraGrab/SpectraGrab.csproj         | 10 +++++
+ 3 files changed, 144 insertions(+)
+ create mode 100644 SpectraGrab/HLS/HlsAssembler.cs
+ create mode 100644 SpectraGrab/HLS/HlsPacketDownloader.cs
+
+diff --git a/SpectraGrab/HLS/HlsAssembler.cs b/SpectraGrab/HLS/HlsAssembler.cs
+new file mode 100644
+index 0000000..aaaaaaaa
+--- /dev/null
++++ b/SpectraGrab/HLS/HlsAssembler.cs
+@@ -0,0 +1,55 @@
++using System.Diagnostics;
++using System.IO;
++using System.Threading.Tasks;
++
++namespace SpectraGrab.HLS
++{
++    public static class HlsAssembler
++    {
++        /// <summary>
++        /// Assembles all .ts segments in the given folder into a single MP4 file
++        /// using ffmpeg. Assumes ffmpeg is available on PATH.
++        /// </summary>
++        /// <param name="folder">Folder containing .ts segment files.</param>
++        /// <returns>Full path to the generated MP4 file.</returns>
++        public static async Task<string> AssembleAsync(string folder)
++        {
++            if (string.IsNullOrWhiteSpace(folder))
++                throw new System.ArgumentException("Folder must be provided.", nameof(folder));
++
++            if (!Directory.Exists(folder))
++                throw new DirectoryNotFoundException($"Folder not found: {folder}");
++
++            string output = Path.Combine(folder, "SpectraGrab_Output.mp4");
++
++            // This uses a simple concat pattern; you can customize to a safer
++            // concat list file if needed.
++            var psi = new ProcessStartInfo
++            {
++                FileName = "ffmpeg",
++                Arguments = "-y -f concat -safe 0 -i segments.txt -c copy SpectraGrab_Output.mp4",
++                WorkingDirectory = folder,
++                CreateNoWindow = true,
++                UseShellExecute = false,
++                RedirectStandardOutput = true,
++                RedirectStandardError = true
++            };
++
++            // Build a segments.txt file listing all .ts files in order
++            var segmentFiles = Directory.GetFiles(folder, "*.ts");
++            using (var writer = new StreamWriter(Path.Combine(folder, "segments.txt"), false))
++            {
++                foreach (var seg in segmentFiles)
++                {
++                    var name = Path.GetFileName(seg);
++                    writer.WriteLine($"file '{name}'");
++                }
++            }
++
++            var proc = Process.Start(psi);
++            if (proc != null)
++                await proc.WaitForExitAsync();
++
++            return output;
++        }
++    }
++}
+diff --git a/SpectraGrab/HLS/HlsPacketDownloader.cs b/SpectraGrab/HLS/HlsPacketDownloader.cs
+new file mode 100644
+index 0000000..bbbbbbbb
+--- /dev/null
++++ b/SpectraGrab/HLS/HlsPacketDownloader.cs
+@@ -0,0 +79 @@
++using System;
++using System.IO;
++using System.Net.Http;
++using System.Threading.Tasks;
++using Windows.Media.Streaming.Adaptive;
++
++namespace SpectraGrab.HLS
++{
++    /// <summary>
++    /// Handles HLS (m3u8) manifest loading and per-segment packet downloading.
++    /// Intercepts AdaptiveMediaSource download events and writes .ts segments
++    /// to disk for later assembly.
++    /// </summary>
++    public class HlsPacketDownloader
++    {
++        private readonly HttpClient _http = new HttpClient();
++        private AdaptiveMediaSource _ams;
++        private string _outputFolder;
++
++        /// <summary>
++        /// Initializes the HLS downloader with the given m3u8 URL and wires
++        /// AdaptiveMediaSource events for packet-level handling.
++        /// </summary>
++        /// <param name="m3u8Url">URL to the HLS manifest (.m3u8).</param>
++        public async Task InitializeAsync(string m3u8Url)
++        {
++            if (string.IsNullOrWhiteSpace(m3u8Url))
++                throw new ArgumentException("m3u8 URL must be provided.", nameof(m3u8Url));
++
++            _outputFolder = Path.Combine(
++                Environment.GetFolderPath(Environment.SpecialFolder.MyVideos),
++                "SpectraGrab", "HLS");
++
++            Directory.CreateDirectory(_outputFolder);
++
++            var result = await AdaptiveMediaSource.CreateFromUriAsync(new Uri(m3u8Url));
++            if (result.Status != AdaptiveMediaSourceCreationStatus.Success)
++                throw new Exception($"Failed to load HLS manifest. Status: {result.Status}");
++
++            _ams = result.MediaSource;
++
++            _ams.DownloadRequested += OnDownloadRequested;
++            _ams.DownloadCompleted += OnDownloadCompleted;
++            _ams.DownloadFailed += OnDownloadFailed;
++        }
++
++        private async void OnDownloadRequested(AdaptiveMediaSource sender, AdaptiveMediaSourceDownloadRequestedEventArgs args)
++        {
++            try
++            {
++                var segmentUri = args.ResourceUri;
++                if (segmentUri == null)
++                {
++                    args.Result.Status = AdaptiveMediaSourceResourceStatus.OtherError;
++                    return;
++                }
++
++                var bytes = await _http.GetByteArrayAsync(segmentUri);
++
++                var fileName = $"segment_{DateTime.Now.Ticks}.ts";
++                var path = Path.Combine(_outputFolder, fileName);
++
++                await File.WriteAllBytesAsync(path, bytes);
++
++                // Provide the data back to the player
++                args.Result.Buffer = bytes.AsBuffer();
++                args.Result.InputStream = null;
++                args.Result.Status = AdaptiveMediaSourceResourceStatus.Success;
++            }
++            catch
++            {
++                args.Result.Status = AdaptiveMediaSourceResourceStatus.OtherError;
++            }
++        }
++
++        private void OnDownloadCompleted(AdaptiveMediaSource sender, AdaptiveMediaSourceDownloadCompletedEventArgs args)
++        {
++            // Optional: log or update UI with progress
++        }
++
++        private void OnDownloadFailed(AdaptiveMediaSource sender, AdaptiveMediaSourceDownloadFailedEventArgs args)
++        {
++            // Optional: retry logic or error reporting
++        }
++
++        /// <summary>
++        /// Returns the folder where HLS segments are being written.
++        /// </summary>
++        public string GetOutputFolder() => _outputFolder;
++    }
++}
+diff --git a/SpectraGrab/SpectraGrab.csproj b/SpectraGrab/SpectraGrab.csproj
+index ccccccc..ddddddd 100644
+--- a/SpectraGrab/SpectraGrab.csproj
++++ b/SpectraGrab/SpectraGrab.csproj
+@@ -1,4 +1,14 @@
+ <Project Sdk="Microsoft.NET.Sdk">
++
++  <!-- HLS packet handling + downloader integration -->
++
+   <PropertyGroup>
+     <!-- existing properties -->
+   </PropertyGroup>
++
++  <ItemGroup>
++    <Compile Include="HLS\HlsPacketDownloader.cs" />
++    <Compile Include="HLS\HlsAssembler.cs" />
++  </ItemGroup>
++
+ </Project>
+--
+2.45.0
