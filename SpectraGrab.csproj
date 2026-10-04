@@ -24,6 +24,11 @@
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageReference Include="HtmlAgilityPack" Version="1.12.4" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.8" />
-  </ItemGroup>
+ 
+</ItemGroup>
+<ItemGroup>
+    <Compile Include="HLS\HlsPacketDownloader.cs" />
+    <Compile Include="HLS\HlsAssembler.cs" />
+</ItemGroup>
 
 </Project>
