@@ -5,3 +5,5 @@ artifacts/
 *.cer
 *.msix
 *.zip
+__pycache__/
+*.py[cod]
