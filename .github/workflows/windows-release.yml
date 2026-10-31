@@ -1,16 +1,19 @@
 name: Windows Build and Release
 
 on:
-  # Alternate release path retained for manual recovery. dotnet-desktop.yml owns
-  # main-branch CI/release to prevent duplicate Windows builds and release races.
   workflow_dispatch:
+    inputs:
+      version:
+        description: Product version to release (must match FEATURE_PARITY.json)
+        required: true
+        type: string
 
 permissions:
   contents: write
 
 concurrency:
-  group: windows-release-${{ github.ref }}
-  cancel-in-progress: true
+  group: coordinated-release-${{ inputs.version }}
+  cancel-in-progress: false
 
 jobs:
   build-publish-release:
@@ -19,6 +22,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Validate cross-platform release readiness
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: python scripts/validate_cross_platform_release.py --version "$env:RELEASE_VERSION"
 
       - name: Setup .NET 8
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
@@ -59,13 +68,15 @@ jobs:
 
       - name: Package release bundle
         shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
         run: |
-          $version = "windows-build-${{ github.run_number }}"
-          $zip = "SpectraGrab-$version-win-x64.zip"
+          $version = $env:RELEASE_VERSION
+          $zip = "SpectraGrab-v$version-win-x64.zip"
           Compress-Archive -Path 'publish/win-x64/*' -DestinationPath $zip -Force
           $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $zip" | Set-Content -Path "$zip.sha256" -Encoding ascii
-          "RELEASE_TAG=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "RELEASE_TAG=v$version" | Out-File -FilePath $env:GITHUB_ENV -Append
           "RELEASE_ZIP=$zip" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Upload workflow artifact
@@ -81,11 +92,15 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
         run: |
           $tag = $env:RELEASE_TAG
           $zip = $env:RELEASE_ZIP
           $sha = "$zip.sha256"
           $title = "SpectraGrab Windows $tag"
+          if (gh release view $tag --repo "${{ github.repository }}" 2>$null) {
+            throw "Release $tag already exists; refusing to replace a coordinated release."
+          }
           $notes = @"
           Automated Windows x64 release for SpectraGrab.
 
@@ -93,15 +108,12 @@ jobs:
           - Runtime: win-x64
           - Deployment: self-contained
           - Packaging: single-file publish bundle
+          - Product version: $env:RELEASE_VERSION
           - Commit: ${{ github.sha }}
           "@
 
-          if (gh release view $tag --repo "${{ github.repository }}" 2>$null) {
-            gh release upload $tag $zip $sha --clobber --repo "${{ github.repository }}"
-          } else {
-            gh release create $tag $zip $sha `
-              --repo "${{ github.repository }}" `
-              --target "${{ github.sha }}" `
-              --title $title `
-              --notes $notes
-          }
+          gh release create $tag $zip $sha `
+            --repo "${{ github.repository }}" `
+            --target "${{ github.sha }}" `
+            --title $title `
+            --notes $notes
