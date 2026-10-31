@@ -1,0 +1,4 @@
+SpectraGrab/
+ └── HLS/
+      ├── HlsPacketDownloader.cs
+      └── HlsAssembler.cs
