@@ -11,13 +11,12 @@ public partial class MainWindow : Window
     {
         ["Home"] = 0,
         ["New Download"] = 0,
-        ["Queue"] = 1,
-        ["Crawler"] = 2,
-        ["Library"] = 3,
-        ["Settings"] = 4
+        ["Capture"] = 1,
+        ["Queue"] = 2,
+        ["Crawler"] = 3,
+        ["Library"] = 4,
+        ["Settings"] = 5
     };
-
-    private TabControl? mainTabControl;
 
     public MainWindow(MainViewModel viewModel)
     {
@@ -30,8 +29,7 @@ public partial class MainWindow : Window
     {
         Loaded -= OnLoaded;
 
-        mainTabControl = FindVisualChild<TabControl>(this);
-        if (mainTabControl is null)
+        if (MainTabControl is null)
         {
             SetStatus("Navigation could not initialize because the main tab control was not found.");
             return;
@@ -50,14 +48,18 @@ public partial class MainWindow : Window
             wiredButtons++;
         }
 
-        SetStatus(wiredButtons == SidebarTabMap.Count
-            ? "Navigation ready. HLS downloads use yt-dlp with FFmpeg fallback when required."
-            : $"Navigation initialized with {wiredButtons} of {SidebarTabMap.Count} sidebar actions wired.");
+        if (DataContext is not MainViewModel { StatusMessage: var status }
+            || !status.StartsWith("Integration configuration verification failed", StringComparison.OrdinalIgnoreCase))
+        {
+            SetStatus(wiredButtons == SidebarTabMap.Count
+                ? "Navigation ready. HLS downloads use yt-dlp with FFmpeg fallback when required."
+                : $"Navigation initialized with {wiredButtons} of {SidebarTabMap.Count} sidebar actions wired.");
+        }
     }
 
     private void SidebarButton_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is not Button { Content: string label } || mainTabControl is null)
+        if (sender is not Button { Content: string label })
         {
             return;
         }
@@ -68,14 +70,14 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (tabIndex < 0 || tabIndex >= mainTabControl.Items.Count)
+        if (tabIndex < 0 || tabIndex >= MainTabControl.Items.Count)
         {
             SetStatus($"The {label} view is unavailable in this build.");
             return;
         }
 
-        mainTabControl.SelectedIndex = tabIndex;
-        mainTabControl.BringIntoView();
+        MainTabControl.SelectedIndex = tabIndex;
+        MainTabControl.BringIntoView();
         SetStatus(label switch
         {
             "Home" => "Home opened.",
@@ -90,16 +92,6 @@ public partial class MainWindow : Window
         {
             viewModel.StatusMessage = message;
         }
-    }
-
-    private static T? FindVisualChild<T>(DependencyObject root) where T : DependencyObject
-    {
-        foreach (var child in FindVisualChildren<T>(root))
-        {
-            return child;
-        }
-
-        return null;
     }
 
     private static IEnumerable<T> FindVisualChildren<T>(DependencyObject root) where T : DependencyObject

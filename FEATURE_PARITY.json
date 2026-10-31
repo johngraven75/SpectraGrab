@@ -93,6 +93,9 @@
     "nfoSidecar": "implemented",
     "directMedia": "implemented",
     "hls": "platform_equivalent",
+    "liveStreamCapture": "implemented_all_platforms",
+    "persistentProviderConfigs": "implemented_all_platforms",
+    "persistentAddInConfigs": "implemented_emby_jellyfin_plex_localai_quickconnect",
     "drmBypass": "prohibited",
     "captchaBypass": "prohibited"
   },

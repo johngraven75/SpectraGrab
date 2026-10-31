@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 2,
+  "id": "extractor-metadata",
+  "name": "Extractor metadata",
+  "enabled": true,
+  "version": 2,
+  "settings": {
+    "source": "yt-dlp",
+    "credentialRequired": false,
+    "enabledForAllSites": true
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 2,
+  "id": "quickconnect",
+  "name": "QuickConnect",
+  "enabled": true,
+  "version": 2,
+  "settings": {
+    "baseUrl": "https://quickconnect.to",
+    "serverId": "",
+    "enabledAtStartup": true
+  }
+}

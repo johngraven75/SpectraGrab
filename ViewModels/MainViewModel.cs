@@ -7,11 +7,14 @@ using SpectraGrab.Services;
 
 namespace SpectraGrab.ViewModels;
 
-public sealed partial class MainViewModel(IYtdlpService downloader, IAutomatedMediaService automation, ICrawlerService crawler, ISitePluginCatalog pluginCatalog, ICodecPackService codecPack, ICodecProfileCatalog codecProfiles) : ObservableObject
+public sealed partial class MainViewModel(IYtdlpService downloader, IAutomatedMediaService automation, ICrawlerService crawler, ISitePluginCatalog pluginCatalog, ICodecPackService codecPack, ICodecProfileCatalog codecProfiles, IStreamCaptureService captureService, IPersistentConfigService persistentConfigs) : ObservableObject, IDisposable
 {
     private readonly CancellationTokenSource lifetime = new();
     private readonly Dictionary<DownloadItem, CancellationTokenSource> activeDownloadTokens = [];
     private readonly object activeDownloadGate = new();
+    private readonly Dictionary<CaptureSession, CancellationTokenSource> activeCaptureTokens = [];
+    private readonly object activeCaptureGate = new();
+    private bool disposed;
 
     [ObservableProperty]
     private string url = string.Empty;
@@ -67,8 +70,15 @@ public sealed partial class MainViewModel(IYtdlpService downloader, IAutomatedMe
     [ObservableProperty]
     private int codecQuality = 82;
 
+    [ObservableProperty]
+    private string captureUrl = string.Empty;
+
+    [ObservableProperty]
+    private string selectedCapturePresetId = "mkv-copy";
+
     public ObservableCollection<DownloadItem> Queue { get; } = [];
     public ObservableCollection<DiscoveredMedia> CrawlResults { get; } = [];
+    public ObservableCollection<CaptureSession> CaptureSessions { get; } = [];
     public ObservableCollection<string> Themes { get; } = ["Midnight Aurora", "Candy Pop", "Forest Morning", "OLED Black", "High Contrast"];
     public ObservableCollection<string> DeviceProfiles { get; } = ["Best quality", "Recommended for PC", "iPhone", "Android", "TV", "Audio only"];
     public ObservableCollection<string> FormatOptions { get; } = ["Best quality", "Best video + best audio", "Audio only"];
@@ -76,11 +86,24 @@ public sealed partial class MainViewModel(IYtdlpService downloader, IAutomatedMe
     public ObservableCollection<SitePluginProfile> SitePlugins { get; } = new(pluginCatalog.Profiles);
     public ObservableCollection<CodecProfile> VideoCodecs { get; } = new(codecProfiles.VideoCodecs);
     public ObservableCollection<AudioCodecProfile> AudioCodecs { get; } = new(codecProfiles.AudioCodecs);
+    public ObservableCollection<CapturePreset> CapturePresets { get; } = new(captureService.Presets);
 
     public string ToolStatus => downloader.Status;
     public string CodecStatus => codecPack.Status;
+    public string CaptureToolStatus => captureService.Status;
+    public string IntegrationConfigStatus => persistentConfigs.Status;
     public int TotalDownloaded => Queue.Count(item => item.Status == "Complete");
     public int ActiveDownloads => Queue.Count(item => IsActiveStatus(item.Status));
+    public int ActiveCaptureCount
+    {
+        get
+        {
+            lock (activeCaptureGate)
+            {
+                return activeCaptureTokens.Count;
+            }
+        }
+    }
     public int FoundMediaCount => CrawlResults.Count;
 
     [RelayCommand]
@@ -351,6 +374,134 @@ public sealed partial class MainViewModel(IYtdlpService downloader, IAutomatedMe
         StatusMessage = $"Added {added} new discovered items to the queue.";
     }
 
+    [RelayCommand]
+    private async Task StartCaptureAsync()
+    {
+        if (!IsHttpUrl(CaptureUrl))
+        {
+            StatusMessage = "Enter a full HTTP or HTTPS stream URL before starting capture.";
+            return;
+        }
+
+        if (!captureService.IsReady)
+        {
+            StatusMessage = captureService.Status;
+            return;
+        }
+
+        var preset = CapturePresets.FirstOrDefault(item => item.Id.Equals(SelectedCapturePresetId, StringComparison.OrdinalIgnoreCase));
+        if (preset is null)
+        {
+            StatusMessage = "Choose a valid capture preset.";
+            return;
+        }
+
+        var session = new CaptureSession
+        {
+            SourceUrl = CaptureUrl.Trim(),
+            PresetName = preset.Name
+        };
+        var sessionToken = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+        lock (activeCaptureGate)
+        {
+            activeCaptureTokens.Add(session, sessionToken);
+        }
+
+        CaptureSessions.Insert(0, session);
+        OnPropertyChanged(nameof(ActiveCaptureCount));
+        StatusMessage = $"Starting live capture with {preset.Name}.";
+
+        var progress = new Progress<CaptureProgress>(update =>
+        {
+            session.OutputPath = update.OutputPath;
+            session.Elapsed = FormatElapsed(update.Elapsed);
+            session.Size = FormatBytes(update.BytesWritten);
+            session.Speed = update.Speed;
+            session.Status = "Capturing";
+        });
+
+        try
+        {
+            var result = await captureService.CaptureAsync(
+                new CaptureRequest(session.SourceUrl, OutputFolder, preset.Id),
+                progress,
+                sessionToken.Token);
+            session.OutputPath = result.OutputPath;
+            session.Elapsed = FormatElapsed(result.Duration);
+            session.Size = FormatBytes(result.BytesWritten);
+            session.Speed = "Complete";
+            session.Status = "Complete";
+            StatusMessage = $"Capture complete: {Path.GetFileName(result.OutputPath)}";
+        }
+        catch (OperationCanceledException) when (sessionToken.IsCancellationRequested)
+        {
+            session.Status = string.IsNullOrWhiteSpace(session.OutputPath) ? "Stopped" : "Stopped · output finalized";
+            session.Speed = "Stopped";
+            StatusMessage = "Capture stopped safely.";
+        }
+        catch (Exception ex)
+        {
+            session.Status = "Failed";
+            session.Speed = "-";
+            StatusMessage = ex.Message;
+        }
+        finally
+        {
+            lock (activeCaptureGate)
+            {
+                activeCaptureTokens.Remove(session);
+            }
+            sessionToken.Dispose();
+            OnPropertyChanged(nameof(ActiveCaptureCount));
+        }
+    }
+
+    [RelayCommand]
+    private void StopCapture(CaptureSession? session)
+    {
+        if (session is null)
+        {
+            return;
+        }
+
+        CancellationTokenSource? token;
+        lock (activeCaptureGate)
+        {
+            activeCaptureTokens.TryGetValue(session, out token);
+        }
+
+        if (token is null)
+        {
+            StatusMessage = "That capture is not running.";
+            return;
+        }
+
+        session.Status = "Stopping";
+        token.Cancel();
+        StatusMessage = "Stopping capture and finalizing its output file...";
+    }
+
+    [RelayCommand]
+    private void RemoveCapture(CaptureSession? session)
+    {
+        if (session is null)
+        {
+            return;
+        }
+
+        lock (activeCaptureGate)
+        {
+            if (activeCaptureTokens.ContainsKey(session))
+            {
+                StatusMessage = "Stop the active capture before removing it from the list.";
+                return;
+            }
+        }
+
+        CaptureSessions.Remove(session);
+        StatusMessage = "Capture entry removed. The output file was not deleted.";
+    }
+
     private async Task RunBusyAsync(Func<CancellationToken, Task> work)
     {
         if (IsBusy)
@@ -386,6 +537,26 @@ public sealed partial class MainViewModel(IYtdlpService downloader, IAutomatedMe
         || status.StartsWith("Trying discovered", StringComparison.OrdinalIgnoreCase)
         || status.Equals("HLS fallback", StringComparison.OrdinalIgnoreCase);
 
+    private static string FormatElapsed(TimeSpan elapsed) =>
+        elapsed.TotalHours >= 1
+            ? elapsed.ToString(@"hh\:mm\:ss")
+            : elapsed.ToString(@"mm\:ss");
+
+    private static string FormatBytes(long bytes)
+    {
+        string[] units = ["B", "KB", "MB", "GB", "TB"];
+        var value = Math.Max(0, bytes);
+        var display = (double)value;
+        var unit = 0;
+        while (display >= 1024 && unit < units.Length - 1)
+        {
+            display /= 1024;
+            unit++;
+        }
+
+        return $"{display:0.##} {units[unit]}";
+    }
+
     private void NotifyQueueCounts()
     {
         OnPropertyChanged(nameof(TotalDownloaded));
@@ -402,4 +573,30 @@ public sealed partial class MainViewModel(IYtdlpService downloader, IAutomatedMe
         SelectedVideoCodecId,
         SelectedAudioCodecId,
         CodecQuality);
+
+    public void Dispose()
+    {
+        if (disposed)
+        {
+            return;
+        }
+
+        disposed = true;
+        lifetime.Cancel();
+        lock (activeDownloadGate)
+        {
+            foreach (var token in activeDownloadTokens.Values)
+            {
+                token.Cancel();
+            }
+        }
+        lock (activeCaptureGate)
+        {
+            foreach (var token in activeCaptureTokens.Values)
+            {
+                token.Cancel();
+            }
+        }
+        lifetime.Dispose();
+    }
 }

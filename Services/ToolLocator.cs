@@ -12,6 +12,12 @@ public sealed class ToolLocator : IToolLocator
 {
     public string? Find(string executableName)
     {
+        var besideApplication = Path.Combine(AppContext.BaseDirectory, executableName);
+        if (File.Exists(besideApplication))
+        {
+            return besideApplication;
+        }
+
         var direct = RunWhere(executableName);
         if (!string.IsNullOrWhiteSpace(direct))
         {

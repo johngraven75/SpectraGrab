@@ -7,6 +7,8 @@ on:
       - '**/*.cs'
       - '**/*.xaml'
       - '**/*.csproj'
+      - 'ConfigDefaults/**'
+      - 'scripts/validate-persistent-configs.*'
       - 'Assets/**'
       - '.github/workflows/dotnet-desktop.yml'
   pull_request:

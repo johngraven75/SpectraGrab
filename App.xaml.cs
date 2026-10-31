@@ -19,6 +19,8 @@ public partial class App : Application
         services.AddSingleton<IJDownloaderService, JDownloaderService>();
         services.AddSingleton<ICodecPackService, CodecPackService>();
         services.AddSingleton<ICodecProfileCatalog, CodecProfileCatalog>();
+        services.AddSingleton<IStreamCaptureService, StreamCaptureService>();
+        services.AddSingleton<IPersistentConfigService, PersistentConfigService>();
         services.AddSingleton<YtdlpService>();
         services.AddSingleton<HlsYtdlpService>();
         services.AddSingleton<CrawlerService>();
@@ -31,7 +33,22 @@ public partial class App : Application
         services.AddSingleton<MainWindow>();
 
         serviceProvider = services.BuildServiceProvider();
-        serviceProvider.GetRequiredService<MainWindow>().Show();
+        string? configFailure = null;
+        try
+        {
+            serviceProvider.GetRequiredService<IPersistentConfigService>().EnsureInitialized();
+        }
+        catch (Exception ex)
+        {
+            configFailure = $"Integration configuration verification failed: {ex.Message}";
+        }
+
+        var window = serviceProvider.GetRequiredService<MainWindow>();
+        if (configFailure is not null && window.DataContext is MainViewModel viewModel)
+        {
+            viewModel.StatusMessage = configFailure;
+        }
+        window.Show();
     }
 
     protected override void OnExit(ExitEventArgs e)

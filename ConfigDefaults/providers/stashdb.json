@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 2,
+  "id": "stashdb",
+  "name": "StashDB",
+  "enabled": true,
+  "version": 2,
+  "settings": {
+    "endpoint": "https://stashdb.org/graphql",
+    "credentialEnvironmentVariable": "SPECTRAGRAB_STASHDB_API_KEY",
+    "credentialRequired": true,
+    "posterDownload": true
+  }
+}
