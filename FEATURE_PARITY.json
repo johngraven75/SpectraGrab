@@ -1,6 +1,85 @@
 {
   "schemaVersion": 1,
   "product": "SpectraGrab",
+  "productVersion": "0.3.0",
+  "sharedFeatures": {
+    "url-inspection": {
+      "windows": "unverified",
+      "android": "unverified",
+      "ios": "unverified"
+    },
+    "extractor-compatibility": {
+      "windows": "unverified",
+      "android": "unverified",
+      "ios": "unverified"
+    },
+    "generic-provider-fallback": {
+      "windows": "unverified",
+      "android": "unverified",
+      "ios": "unverified"
+    },
+    "direct-media": {
+      "windows": "unverified",
+      "android": "unverified",
+      "ios": "unverified"
+    },
+    "hls": {
+      "windows": "unverified",
+      "android": "unverified",
+      "ios": "unverified"
+    },
+    "dash": {
+      "windows": "unverified",
+      "android": "unverified",
+      "ios": "unverified"
+    },
+    "playlists": {
+      "windows": "unverified",
+      "android": "unverified",
+      "ios": "unverified"
+    },
+    "bounded-deep-crawl": {
+      "windows": "unverified",
+      "android": "unverified",
+      "ios": "unverified"
+    },
+    "queue-pause-cancel-resume": {
+      "windows": "unverified",
+      "android": "unverified",
+      "ios": "unverified"
+    },
+    "retries": {
+      "windows": "unverified",
+      "android": "unverified",
+      "ios": "unverified"
+    },
+    "format-quality-selection": {
+      "windows": "unverified",
+      "android": "unverified",
+      "ios": "unverified"
+    },
+    "captcha-human-handoff": {
+      "windows": "unverified",
+      "android": "unverified",
+      "ios": "unverified"
+    },
+    "authorized-session-handling": {
+      "windows": "unverified",
+      "android": "unverified",
+      "ios": "unverified"
+    },
+    "ffmpeg-merge-transcode": {
+      "windows": "unverified",
+      "android": "unverified",
+      "ios": "unverified"
+    },
+    "provider-profiles": {
+      "windows": "unverified",
+      "android": "unverified",
+      "ios": "unverified"
+    }
+  },
+  "platformLimitations": {},
   "changeId": "SG-AUTO-DOWNLOAD-METADATA-001",
   "model": "Qwen/Qwen3-4B-Instruct-2507",
   "features": {

@@ -8,7 +8,7 @@
 
   <Identity Name="John.SpectraGrab"
             Publisher="CN=SpectraGrab Local"
-            Version="0.1.0.5"
+            Version="0.3.0.0"
             ProcessorArchitecture="x64" />
 
   <Properties>

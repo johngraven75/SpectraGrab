@@ -47,7 +47,11 @@ iOS must comply with sandboxing, background-transfer limits, app-group/keychain 
 
 ## Version synchronization
 
-All repositories use the same product version. A release tag is green only when the same version is validated on Windows, Android, and iOS.
+All repositories use the same product version. `FEATURE_PARITY.json` in each repository must carry the same `productVersion` and the same `sharedFeatures` identifiers. Each feature records a state for Windows, Android, and iOS:
+
+- `implemented` means the capability is implemented and validated.
+- `platform-limited` requires a documented reason in `platformLimitations`.
+- Any other state blocks a coordinated release.
 
 Recommended release tag format:
 
@@ -68,6 +72,10 @@ A product release is allowed only when:
 - Signing/publishing credentials required by the target store are present.
 
 A failed platform blocks the coordinated product release until corrected or explicitly excluded by a documented platform limitation.
+
+The Windows `windows-release.yml` workflow is the coordinated publishing entry point. It runs `scripts/validate_cross_platform_release.py` before building or publishing. The gate verifies all three version declarations and parity matrices, plus successful CI for each mobile repository's current `main` commit and an unexpired release artifact from that same run (Android production APK/AAB bundle and iOS Release archive). Simulator-only iOS builds and Android debug TEST APKs do not satisfy these artifact requirements. It fails closed on missing, stale, inaccessible, or unsuccessful peer validation. The peer repositories must be publicly readable by GitHub Actions for the unauthenticated read-only checks; no cross-repository write token is used.
+
+Routine Windows CI builds upload validation artifacts but do not publish GitHub releases. A coordinated Windows release requires manually dispatching `windows-release.yml` with the exact product version after the mobile matrices and current platform builds pass.
 
 ## Change propagation workflow
 
