@@ -75,34 +75,9 @@ jobs:
           }
           Write-Host "Verified $($file.FullName) ($($file.Length) bytes)"
 
-      - name: Package Windows release
-        if: github.event_name != 'pull_request'
-        shell: pwsh
-        run: |
-          $archive = 'artifacts/SpectraGrab-Windows-x64.zip'
-          if (Test-Path $archive) { Remove-Item $archive -Force }
-          Compress-Archive -Path 'artifacts/win-x64/*' -DestinationPath $archive -CompressionLevel Optimal
-          if (-not (Test-Path $archive)) { throw "Release archive was not created." }
-
       - name: Upload Windows build artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: SpectraGrab-Windows-x64-CI
           path: artifacts/win-x64/
           if-no-files-found: error
-
-      - name: Report build failure
-        if: failure()
-        continue-on-error: true
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $title = "SpectraGrab Windows build failure"
-          $body = "Current-commit Windows build or publication failed.`n`nRun: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}`nCommit: ${{ github.sha }}"
-          $existing = gh issue list --state open --search "`"$title`" in:title" --json number,title --jq ".[] | select(.title == `"$title`") | .number" | Select-Object -First 1
-          if ($existing) {
-            gh issue comment $existing --body $body
-          } else {
-            gh issue create --title $title --body $body
-          }
