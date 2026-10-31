@@ -34,3 +34,7 @@ The five media add-ins are Emby, Jellyfin, Plex, Local AI, and QuickConnect. Cre
 ## Privacy
 
 SpectraGrab has no telemetry code. URLs are sent only to the sites the user chooses to inspect, crawl, or download from.
+
+## Cross-platform releases
+
+The shared product version and feature parity contract are tracked in `FEATURE_PARITY.json` and `docs/CROSS_PLATFORM_SYNC.md`. Windows CI does not publish releases; the coordinated release workflow blocks publishing until the Windows, Android, and iOS versions, parity states, and current platform CI runs are verified.

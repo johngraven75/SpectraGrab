@@ -5,4 +5,5 @@ artifacts/
 *.cer
 *.msix
 *.zip
-*_wpftmp.csproj
+__pycache__/
+*.py[cod]

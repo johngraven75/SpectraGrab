@@ -94,6 +94,7 @@ public sealed class HlsYtdlpService(
             "--hls-prefer-ffmpeg",
             "--downloader", "m3u8:ffmpeg",
             "--downloader", "m3u8_native:ffmpeg",
+            "--print", "after_move:SPECTRAGRAB_FILE:%(filepath)s",
             "--write-subs",
             "--write-auto-subs",
             "--output", outputTemplate,
@@ -126,8 +127,19 @@ public sealed class HlsYtdlpService(
 
         var stdoutTask = PumpProgressAsync(process.StandardOutput, item, cancellationToken);
         var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
-        await Task.WhenAll(stdoutTask, process.WaitForExitAsync(cancellationToken));
-        var error = await stderrTask;
+        string error;
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken);
+            await stdoutTask;
+            error = await stderrTask;
+        }
+        catch (OperationCanceledException)
+        {
+            KillProcessTree(process);
+            await ObserveAfterCancellationAsync(stdoutTask, stderrTask);
+            throw;
+        }
 
         if (process.ExitCode != 0)
         {
@@ -148,7 +160,10 @@ public sealed class HlsYtdlpService(
         item.Status = "Complete";
         item.Speed = "Done";
         item.Eta = "0s";
-        item.OutputPath = outputFolder;
+        if (string.IsNullOrWhiteSpace(item.OutputPath))
+        {
+            item.OutputPath = outputFolder;
+        }
     }
 
     private static async Task PumpProgressAsync(
@@ -165,6 +180,17 @@ public sealed class HlsYtdlpService(
                 continue;
             }
 
+            const string completedFilePrefix = "SPECTRAGRAB_FILE:";
+            if (line.StartsWith(completedFilePrefix, StringComparison.Ordinal))
+            {
+                var completedPath = line[completedFilePrefix.Length..].Trim();
+                if (!string.IsNullOrWhiteSpace(completedPath))
+                {
+                    item.OutputPath = completedPath;
+                }
+                continue;
+            }
+
             // yt-dlp's normal output is still useful during live HLS recording even
             // when a percentage is unavailable. Keep status visible rather than
             // presenting the queue as stalled.
@@ -172,6 +198,45 @@ public sealed class HlsYtdlpService(
             {
                 item.Status = "Downloading HLS";
             }
+        }
+    }
+
+    private static void KillProcessTree(Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            // The process exited between HasExited and Kill.
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            // The process is already gone or Windows denied a redundant kill.
+        }
+    }
+
+    private static async Task ObserveAfterCancellationAsync(params Task[] tasks)
+    {
+        try
+        {
+            await Task.WhenAll(tasks);
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected after the linked cancellation token is cancelled.
+        }
+        catch (ObjectDisposedException)
+        {
+            // Process stream disposal is expected during forced termination.
+        }
+        catch (IOException)
+        {
+            // A killed child process can close redirected pipes abruptly.
         }
     }
 
