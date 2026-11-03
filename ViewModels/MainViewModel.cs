@@ -7,13 +7,16 @@ using SpectraGrab.Services;
 
 namespace SpectraGrab.ViewModels;
 
-public sealed partial class MainViewModel(IYtdlpService downloader, IAutomatedMediaService automation, ICrawlerService crawler, ISitePluginCatalog pluginCatalog, ICodecPackService codecPack, ICodecProfileCatalog codecProfiles, IStreamCaptureService captureService, IPersistentConfigService persistentConfigs) : ObservableObject, IDisposable
+public sealed partial class MainViewModel(IYtdlpService downloader, IAutomatedMediaService automation, ICrawlerService crawler, ISitePluginCatalog pluginCatalog, ICodecPackService codecPack, ICodecProfileCatalog codecProfiles, IStreamCaptureService captureService, IPersistentConfigService persistentConfigs, IToolBootstrapService toolBootstrap, IConverterService converter, IAppSettingsService appSettings) : ObservableObject, IDisposable
 {
     private readonly CancellationTokenSource lifetime = new();
     private readonly Dictionary<DownloadItem, CancellationTokenSource> activeDownloadTokens = [];
     private readonly object activeDownloadGate = new();
     private readonly Dictionary<CaptureSession, CancellationTokenSource> activeCaptureTokens = [];
     private readonly object activeCaptureGate = new();
+    private readonly System.Windows.Threading.DispatcherTimer clipboardTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+    private readonly System.Windows.Threading.DispatcherTimer scheduledTimer = new() { Interval = TimeSpan.FromMinutes(1) };
+    private string lastSeenClipboardUrl = string.Empty;
     private bool disposed;
 
     [ObservableProperty]
@@ -76,6 +79,187 @@ public sealed partial class MainViewModel(IYtdlpService downloader, IAutomatedMe
     [ObservableProperty]
     private string selectedCapturePresetId = "mkv-copy";
 
+    [ObservableProperty]
+    private string toolInstallStatus = string.Empty;
+
+    [ObservableProperty]
+    private bool respectRobotsTxt = true;
+
+    [ObservableProperty]
+    private int crawlerDelayMilliseconds = 100;
+
+    [ObservableProperty]
+    private bool monitorClipboard;
+
+    [ObservableProperty]
+    private bool scheduledDownloads;
+
+    [ObservableProperty]
+    private bool portableTools;
+
+    [ObservableProperty]
+    private string converterInputPath = string.Empty;
+
+    [ObservableProperty]
+    private string selectedConverterPresetId = "mp4-h264-aac";
+
+    [ObservableProperty]
+    private int converterQuality = 82;
+
+    [ObservableProperty]
+    private string converterStatus = "Choose a local file, pick a preset, and convert with ffmpeg.";
+
+    [ObservableProperty]
+    private string selectedDeviceProfile = "Best quality";
+
+    [ObservableProperty]
+    private bool crawlVideoFilter = true;
+
+    [ObservableProperty]
+    private bool crawlAudioFilter = true;
+
+    [ObservableProperty]
+    private bool crawlImageFilter = true;
+
+    [ObservableProperty]
+    private bool crawlSubtitleFilter = true;
+
+    partial void OnSelectedDeviceProfileChanged(string value)
+    {
+        // The device-profile dropdown previously did nothing. Map it to
+        // the format selection it is meant to control.
+        SelectedFormat = value switch
+        {
+            "Audio only" => "Audio only",
+            "Recommended for PC" => "Best video + best audio",
+            _ => "Best quality"
+        };
+    }
+
+    partial void OnRespectRobotsTxtChanged(bool value)
+    {
+        appSettings.RespectRobotsTxt = value;
+        appSettings.Save();
+    }
+
+    partial void OnCrawlerDelayMillisecondsChanged(int value)
+    {
+        appSettings.CrawlerDelayMilliseconds = value;
+        appSettings.Save();
+    }
+
+    partial void OnMonitorClipboardChanged(bool value)
+    {
+        appSettings.MonitorClipboard = value;
+        appSettings.Save();
+        UpdateClipboardTimer();
+    }
+
+    partial void OnScheduledDownloadsChanged(bool value)
+    {
+        appSettings.ScheduledDownloads = value;
+        appSettings.Save();
+        UpdateScheduledTimer();
+    }
+
+    partial void OnPortableToolsChanged(bool value)
+    {
+        appSettings.PortableTools = value;
+        appSettings.Save();
+        OnPropertyChanged(nameof(ToolStatus));
+    }
+
+    /// <summary>
+    /// Called once from MainWindow.OnLoaded. Applies persisted settings,
+    /// starts optional timers, and surfaces missing tools at boot instead
+    /// of letting navigation overwrite the warning with "Navigation ready".
+    /// </summary>
+    public void RefreshBootState()
+    {
+        RespectRobotsTxt = appSettings.RespectRobotsTxt;
+        CrawlerDelayMilliseconds = appSettings.CrawlerDelayMilliseconds;
+        MonitorClipboard = appSettings.MonitorClipboard;
+        ScheduledDownloads = appSettings.ScheduledDownloads;
+        PortableTools = appSettings.PortableTools;
+        UpdateClipboardTimer();
+        UpdateScheduledTimer();
+        OnPropertyChanged(nameof(ToolStatus));
+        OnPropertyChanged(nameof(CaptureToolStatus));
+
+        if (!downloader.IsReady || !captureService.IsReady)
+        {
+            ToolInstallStatus = toolBootstrap.Status;
+            StatusMessage = toolBootstrap.Status + " Press 'Install missing tools' on the New Download tab.";
+        }
+    }
+
+    private void UpdateClipboardTimer()
+    {
+        clipboardTimer.Tick -= ClipboardTimer_Tick;
+        clipboardTimer.Stop();
+        if (MonitorClipboard)
+        {
+            clipboardTimer.Tick += ClipboardTimer_Tick;
+            clipboardTimer.Start();
+        }
+    }
+
+    private void UpdateScheduledTimer()
+    {
+        scheduledTimer.Tick -= ScheduledTimer_Tick;
+        scheduledTimer.Stop();
+        if (ScheduledDownloads)
+        {
+            scheduledTimer.Tick += ScheduledTimer_Tick;
+            scheduledTimer.Start();
+        }
+    }
+
+    private void ClipboardTimer_Tick(object? sender, EventArgs e)
+    {
+        if (!MonitorClipboard)
+        {
+            return;
+        }
+
+        string text;
+        try
+        {
+            text = System.Windows.Clipboard.GetText() ?? string.Empty;
+        }
+        catch
+        {
+            // Clipboard is busy or unavailable; try again on the next tick.
+            return;
+        }
+
+        if (!IsHttpUrl(text) || text == lastSeenClipboardUrl || text == Url)
+        {
+            return;
+        }
+
+        lastSeenClipboardUrl = text;
+        Url = text;
+        StatusMessage = "Clipboard URL detected. Press Inspect or Download.";
+    }
+
+    private async void ScheduledTimer_Tick(object? sender, EventArgs e)
+    {
+        if (!ScheduledDownloads || IsBusy)
+        {
+            return;
+        }
+
+        var hour = DateTime.Now.Hour;
+        var isOffPeak = hour >= 22 || hour < 6;
+        if (!isOffPeak || !Queue.Any(item => item.Status == "Queued"))
+        {
+            return;
+        }
+
+        await StartQueueAsync();
+    }
+
     public ObservableCollection<DownloadItem> Queue { get; } = [];
     public ObservableCollection<DiscoveredMedia> CrawlResults { get; } = [];
     public ObservableCollection<CaptureSession> CaptureSessions { get; } = [];
@@ -87,6 +271,7 @@ public sealed partial class MainViewModel(IYtdlpService downloader, IAutomatedMe
     public ObservableCollection<CodecProfile> VideoCodecs { get; } = new(codecProfiles.VideoCodecs);
     public ObservableCollection<AudioCodecProfile> AudioCodecs { get; } = new(codecProfiles.AudioCodecs);
     public ObservableCollection<CapturePreset> CapturePresets { get; } = new(captureService.Presets);
+    public ObservableCollection<ConverterPreset> ConverterPresets { get; } = new(converter.Presets);
 
     public string ToolStatus => downloader.Status;
     public string CodecStatus => codecPack.Status;
@@ -127,6 +312,77 @@ public sealed partial class MainViewModel(IYtdlpService downloader, IAutomatedMe
 
             SelectedFormat = FormatOptions.FirstOrDefault() ?? "Best quality";
             StatusMessage = $"Ready: {CurrentMetadata.Title}";
+        });
+    }
+
+    [RelayCommand]
+    private async Task InstallToolsAsync()
+    {
+        if (IsBusy)
+        {
+            return;
+        }
+
+        try
+        {
+            IsBusy = true;
+            ToolInstallStatus = "Installing missing tools...";
+            StatusMessage = "Installing missing tools. ffmpeg can take a while to download.";
+            var progress = new Progress<string>(message =>
+            {
+                ToolInstallStatus = message;
+                StatusMessage = message;
+            });
+            await toolBootstrap.InstallMissingToolsAsync(progress, lifetime.Token);
+            ToolInstallStatus = toolBootstrap.Status;
+            StatusMessage = "Tools installed and verified. You can inspect and download now.";
+            OnPropertyChanged(nameof(ToolStatus));
+            OnPropertyChanged(nameof(CaptureToolStatus));
+        }
+        catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
+        {
+            StatusMessage = "Tool installation cancelled.";
+        }
+        catch (Exception ex)
+        {
+            ToolInstallStatus = toolBootstrap.Status;
+            StatusMessage = ex.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private void BrowseConverterInput()
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Choose a local file to convert",
+            Filter = "Media files|*.mp4;*.mkv;*.webm;*.mov;*.avi;*.ts;*.m4v;*.mp3;*.wav;*.flac|All files|*.*"
+        };
+        if (dialog.ShowDialog() == true)
+        {
+            ConverterInputPath = dialog.FileName;
+        }
+    }
+
+    [RelayCommand]
+    private async Task ConvertAsync()
+    {
+        if (string.IsNullOrWhiteSpace(ConverterInputPath) || !File.Exists(ConverterInputPath))
+        {
+            ConverterStatus = "Choose an existing local file first.";
+            return;
+        }
+
+        await RunBusyAsync(async token =>
+        {
+            ConverterStatus = "Converting with ffmpeg...";
+            var output = await converter.ConvertAsync(ConverterInputPath, SelectedConverterPresetId, ConverterQuality, OutputFolder, token);
+            ConverterStatus = $"Converted: {output}";
+            StatusMessage = $"Conversion complete: {Path.GetFileName(output)}";
         });
     }
 
@@ -319,7 +575,7 @@ public sealed partial class MainViewModel(IYtdlpService downloader, IAutomatedMe
             StatusMessage = "Deep-crawling pages, embeds, manifests, and direct media...";
             CrawlResults.Clear();
             var results = await crawler.CrawlAsync(CrawlerUrl, Math.Clamp(CrawlDepth, 0, 8), token);
-            foreach (var result in results)
+            foreach (var result in results.Where(CrawlFilterPasses))
             {
                 CrawlResults.Add(result);
             }
@@ -528,6 +784,15 @@ public sealed partial class MainViewModel(IYtdlpService downloader, IAutomatedMe
         }
     }
 
+    private bool CrawlFilterPasses(DiscoveredMedia media) => media.Type switch
+    {
+        "audio" => CrawlAudioFilter,
+        "image" => CrawlImageFilter,
+        "subtitle" => CrawlSubtitleFilter,
+        // Manifests and video are both video results for filtering purposes.
+        _ => CrawlVideoFilter
+    };
+
     private static bool IsHttpUrl(string value) =>
         Uri.TryCreate(value, UriKind.Absolute, out var uri)
         && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
@@ -582,6 +847,8 @@ public sealed partial class MainViewModel(IYtdlpService downloader, IAutomatedMe
         }
 
         disposed = true;
+        clipboardTimer.Stop();
+        scheduledTimer.Stop();
         lifetime.Cancel();
         lock (activeDownloadGate)
         {

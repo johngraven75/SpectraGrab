@@ -14,7 +14,7 @@ public partial class MainWindow : Window
         ["Capture"] = 1,
         ["Queue"] = 2,
         ["Crawler"] = 3,
-        ["Library"] = 4,
+        ["Converter"] = 4,
         ["Settings"] = 5
     };
 
@@ -48,12 +48,22 @@ public partial class MainWindow : Window
             wiredButtons++;
         }
 
-        if (DataContext is not MainViewModel { StatusMessage: var status }
-            || !status.StartsWith("Integration configuration verification failed", StringComparison.OrdinalIgnoreCase))
+        if (DataContext is MainViewModel viewModel)
         {
-            SetStatus(wiredButtons == SidebarTabMap.Count
-                ? "Navigation ready. HLS downloads use yt-dlp with FFmpeg fallback when required."
-                : $"Navigation initialized with {wiredButtons} of {SidebarTabMap.Count} sidebar actions wired.");
+            viewModel.RefreshBootState();
+
+            // RefreshBootState may have set a tool-missing warning or a
+            // config failure. Do not overwrite those with "Navigation ready".
+            var status = viewModel.StatusMessage;
+            var isWarning = status.StartsWith("Integration configuration verification failed", StringComparison.OrdinalIgnoreCase)
+                || status.Contains("Missing tools", StringComparison.OrdinalIgnoreCase)
+                || status.Contains("was not found", StringComparison.OrdinalIgnoreCase);
+            if (!isWarning)
+            {
+                SetStatus(wiredButtons == SidebarTabMap.Count
+                    ? "Navigation ready. HLS downloads use yt-dlp with FFmpeg fallback when required."
+                    : $"Navigation initialized with {wiredButtons} of {SidebarTabMap.Count} sidebar actions wired.");
+            }
         }
     }
 
@@ -81,7 +91,7 @@ public partial class MainWindow : Window
         SetStatus(label switch
         {
             "Home" => "Home opened.",
-            "Library" => "Library and conversion tools opened.",
+            "Converter" => "Converter opened.",
             _ => $"{label} opened."
         });
     }
