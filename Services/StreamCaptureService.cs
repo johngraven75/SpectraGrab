@@ -26,18 +26,22 @@ public sealed class StreamCaptureService : IStreamCaptureService
         new("mpegts-copy", "MPEG-TS · stream copy", ".ts", "mpegts", "Keeps transport-stream output for maximum HLS compatibility.")
     ];
 
-    private readonly string? ffmpegPath;
+    private readonly IToolLocator toolLocator;
 
     public StreamCaptureService(IToolLocator toolLocator)
     {
-        ffmpegPath = toolLocator.Find("ffmpeg.exe") ?? toolLocator.Find("ffmpeg");
+        this.toolLocator = toolLocator;
     }
 
-    public bool IsReady => ffmpegPath is not null;
+    // Resolved per operation so ffmpeg installed after launch works
+    // without a restart (see YtdlpService for the same fix).
+    private string? FindFfmpeg() => toolLocator.Find("ffmpeg.exe") ?? toolLocator.Find("ffmpeg");
 
-    public string Status => ffmpegPath is null
-        ? "FFmpeg was not found. Install or bundle FFmpeg to enable live capture."
-        : $"FFmpeg capture ready at {ffmpegPath}";
+    public bool IsReady => FindFfmpeg() is not null;
+
+    public string Status => FindFfmpeg() is null
+        ? "FFmpeg was not found. Use 'Install missing tools' to fetch ffmpeg and enable live capture."
+        : $"FFmpeg capture ready at {FindFfmpeg()}";
 
     public IReadOnlyList<CapturePreset> Presets => CapturePresets;
 
@@ -49,9 +53,10 @@ public sealed class StreamCaptureService : IStreamCaptureService
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
+        var ffmpegPath = FindFfmpeg();
         if (ffmpegPath is null)
         {
-            throw new InvalidOperationException("FFmpeg was not found. Install FFmpeg or place ffmpeg.exe beside SpectraGrab.exe, then try again.");
+            throw new InvalidOperationException("FFmpeg was not found. Use 'Install missing tools' to fetch ffmpeg, or place ffmpeg.exe beside SpectraGrab.exe, then try again.");
         }
 
         if (!TryGetHttpUri(request.SourceUrl, out var sourceUri))

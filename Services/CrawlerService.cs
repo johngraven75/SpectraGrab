@@ -12,9 +12,13 @@ public interface ICrawlerService
     Task<IReadOnlyList<DiscoveredMedia>> CrawlAsync(string url, int depth, CancellationToken cancellationToken);
 }
 
-public sealed partial class CrawlerService : ICrawlerService
+public sealed partial class CrawlerService(IAppSettingsService settings) : ICrawlerService
 {
     private const int MaxPagesPerCrawl = 250;
+
+    private readonly Dictionary<string, List<string>> robotsDisallowByHost = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> robotsFetchedHosts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object robotsGate = new();
 
     private static readonly string[] MediaExtensions =
     [
@@ -50,6 +54,11 @@ public sealed partial class CrawlerService : ICrawlerService
             cancellationToken.ThrowIfCancellationRequested();
             var (current, level) = pending.Dequeue();
             if (level > normalizedDepth || !visited.Add(NormalizePageKey(current)))
+            {
+                continue;
+            }
+
+            if (settings.RespectRobotsTxt && await IsDisallowedByRobotsAsync(current, cancellationToken))
             {
                 continue;
             }
@@ -123,13 +132,92 @@ public sealed partial class CrawlerService : ICrawlerService
                 }
             }
 
-            await Task.Delay(100, cancellationToken);
+            await Task.Delay(settings.CrawlerDelayMilliseconds, cancellationToken);
         }
 
         return results.Values
             .OrderBy(item => MediaPriority(item.Type))
             .ThenBy(item => item.Title, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    private async Task<bool> IsDisallowedByRobotsAsync(Uri uri, CancellationToken cancellationToken)
+    {
+        lock (robotsGate)
+        {
+            if (!robotsFetchedHosts.Contains(uri.Host))
+            {
+                // Mark before fetching so a failed fetch is not retried on
+                // every page of the same host during one crawl.
+                robotsFetchedHosts.Add(uri.Host);
+            }
+            else if (robotsDisallowByHost.TryGetValue(uri.Host, out var cached))
+            {
+                return cached.Any(rule => !string.IsNullOrWhiteSpace(rule) && uri.AbsolutePath.StartsWith(rule, StringComparison.Ordinal));
+            }
+        }
+
+        // First use for this host: fetch robots.txt. A fetch failure means
+        // "no rules found", not "block everything".
+        var disallowed = await FetchRobotsDisallowAsync(uri, cancellationToken);
+        lock (robotsGate)
+        {
+            robotsDisallowByHost[uri.Host] = disallowed;
+        }
+
+        return disallowed.Any(rule => !string.IsNullOrWhiteSpace(rule) && uri.AbsolutePath.StartsWith(rule, StringComparison.Ordinal));
+    }
+
+    private async Task<List<string>> FetchRobotsDisallowAsync(Uri uri, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var robotsUri = new UriBuilder(uri) { Path = "/robots.txt", Query = string.Empty, Fragment = string.Empty }.Uri;
+            using var response = await httpClient.GetAsync(robotsUri, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return [];
+            }
+
+            var text = await response.Content.ReadAsStringAsync(cancellationToken);
+            return ParseRobotsDisallow(text);
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private static List<string> ParseRobotsDisallow(string text)
+    {
+        var disallowed = new List<string>();
+        var groupApplies = false;
+        foreach (var rawLine in text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+        {
+            var line = rawLine.Split('#')[0].Trim();
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            var separator = line.IndexOf(':');
+            if (separator <= 0)
+            {
+                continue;
+            }
+
+            var key = line[..separator].Trim();
+            var value = line[(separator + 1)..].Trim();
+            if (key.Equals("User-agent", StringComparison.OrdinalIgnoreCase))
+            {
+                groupApplies = value == "*" || value.Contains("SpectraGrab", StringComparison.OrdinalIgnoreCase);
+            }
+            else if (groupApplies && key.Equals("Disallow", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(value))
+            {
+                disallowed.Add(value);
+            }
+        }
+        return disallowed;
     }
 
     private static HttpClient BuildClient()
