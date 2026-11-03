@@ -104,13 +104,13 @@
                     </Border>
                     <TextBlock Text="Spectra-Grab 26" Foreground="{StaticResource TextBrush}" FontSize="26" FontWeight="Black" />
                     <TextBlock Text="Ultimate Edition" Foreground="#21D4FD" FontSize="15" FontWeight="Bold" />
-                    <TextBlock Text="Capture Everything. Any Format. Any Site." Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,6,0,24" />
+                    <TextBlock Text="Capture public, unprotected media. yt-dlp + ffmpeg required." Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,6,0,24" />
                     <Button Content="Home" />
                     <Button Content="New Download" />
                     <Button Content="Capture" />
                     <Button Content="Queue" />
                     <Button Content="Crawler" />
-                    <Button Content="Library" />
+                    <Button Content="Converter" />
                     <Button Content="Settings" />
                 </StackPanel>
                 <StackPanel DockPanel.Dock="Bottom" VerticalAlignment="Bottom">
@@ -162,6 +162,7 @@
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
                                     <RowDefinition Height="*" />
                                 </Grid.RowDefinitions>
                                 <TextBlock Text="Paste a video, playlist, channel, or direct media URL" Foreground="{StaticResource TextBrush}" FontSize="20" FontWeight="Bold" />
@@ -175,8 +176,16 @@
                                     <Button Grid.Column="1" Content="Inspect" Command="{Binding InspectCommand}" />
                                     <Button Grid.Column="2" Content="Download" Command="{Binding DownloadCurrentCommand}" />
                                 </Grid>
+                                <Grid Grid.Row="2" Margin="0,0,0,14">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="220" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{Binding ToolInstallStatus}" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" VerticalAlignment="Center" />
+                                    <Button Grid.Column="1" Content="Install missing tools" Command="{Binding InstallToolsCommand}" />
+                                </Grid>
 
-                                <Grid Grid.Row="2">
+                                <Grid Grid.Row="3">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="360" />
                                         <ColumnDefinition Width="*" />
@@ -225,7 +234,7 @@
                                         <TextBlock Text="Output folder" Foreground="#21D4FD" FontWeight="Bold" Margin="0,16,0,6" />
                                         <TextBox Text="{Binding OutputFolder, UpdateSourceTrigger=PropertyChanged}" />
                                         <TextBlock Text="Device profile" Foreground="#21D4FD" FontWeight="Bold" Margin="0,16,0,6" />
-                                        <ComboBox ItemsSource="{Binding DeviceProfiles}" SelectedIndex="0" />
+                                        <ComboBox ItemsSource="{Binding DeviceProfiles}" SelectedItem="{Binding SelectedDeviceProfile}" />
                                         <TextBlock Text="Hoster plugin" Foreground="#21D4FD" FontWeight="Bold" Margin="0,16,0,6" />
                                         <ComboBox ItemsSource="{Binding SitePlugins}" DisplayMemberPath="Name" SelectedValuePath="Id" SelectedValue="{Binding SelectedSitePluginId}" />
                                         <Grid Margin="0,16,0,0">
@@ -353,11 +362,11 @@
                                     <Border Background="#AA101624" CornerRadius="8" Padding="14" MinHeight="365">
                                         <StackPanel>
                                             <TextBlock Text="Discovery filters" Foreground="#21D4FD" FontWeight="Bold" />
-                                            <CheckBox Content="Video" Foreground="{StaticResource TextBrush}" IsChecked="True" Margin="0,12,0,0" />
-                                            <CheckBox Content="Audio" Foreground="{StaticResource TextBrush}" IsChecked="True" Margin="0,8,0,0" />
-                                            <CheckBox Content="Images" Foreground="{StaticResource TextBrush}" IsChecked="True" Margin="0,8,0,0" />
-                                            <CheckBox Content="Subtitles" Foreground="{StaticResource TextBrush}" IsChecked="True" Margin="0,8,0,0" />
-                                            <TextBlock Text="Static HTML crawling is active. A headless browser hook is reserved for the next build." Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,22,0,0" />
+                                            <CheckBox Content="Video" Foreground="{StaticResource TextBrush}" IsChecked="{Binding CrawlVideoFilter}" Margin="0,12,0,0" />
+                                            <CheckBox Content="Audio" Foreground="{StaticResource TextBrush}" IsChecked="{Binding CrawlAudioFilter}" Margin="0,8,0,0" />
+                                            <CheckBox Content="Images" Foreground="{StaticResource TextBrush}" IsChecked="{Binding CrawlImageFilter}" Margin="0,8,0,0" />
+                                            <CheckBox Content="Subtitles" Foreground="{StaticResource TextBrush}" IsChecked="{Binding CrawlSubtitleFilter}" Margin="0,8,0,0" />
+                                            <TextBlock Text="Static HTML crawling plus headless-browser DOM rendering are both active when Edge/Chrome is found." Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,22,0,0" />
                                         </StackPanel>
                                     </Border>
                                     <ScrollViewer Grid.Column="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Margin="18,0,0,0" MinHeight="365">
@@ -383,21 +392,18 @@
                                 </Grid.ColumnDefinitions>
                                 <StackPanel>
                                     <TextBlock Text="Media converter" Foreground="{StaticResource TextBrush}" FontSize="20" FontWeight="Bold" />
-                                    <Border BorderBrush="#52607F" BorderThickness="2" CornerRadius="8" Padding="36" Margin="0,18,18,0" MinHeight="245">
-                                        <TextBlock Text="Drop local files here for the conversion queue" Foreground="{StaticResource MutedTextBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                    </Border>
+                                    <TextBlock Text="Local file to convert" Foreground="#21D4FD" FontWeight="Bold" Margin="0,18,0,6" />
+                                    <TextBox Text="{Binding ConverterInputPath, UpdateSourceTrigger=PropertyChanged}" />
+                                    <Button Content="Browse..." Command="{Binding BrowseConverterInputCommand}" Margin="0,10,0,0" HorizontalAlignment="Left" />
+                                    <Button Content="Convert" Command="{Binding ConvertCommand}" Margin="0,10,0,0" HorizontalAlignment="Left" />
+                                    <TextBlock Text="{Binding ConverterStatus}" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,14,18,0" />
                                 </StackPanel>
                                 <StackPanel Grid.Column="1">
                                     <TextBlock Text="Presets" Foreground="#21D4FD" FontWeight="Bold" />
-                                    <ComboBox SelectedIndex="0" Margin="0,8,0,18">
-                                        <ComboBoxItem Content="MP4 H.264 AAC" />
-                                        <ComboBoxItem Content="MKV H.265 Opus" />
-                                        <ComboBoxItem Content="WebM AV1 Opus" />
-                                        <ComboBoxItem Content="GIF clip" />
-                                    </ComboBox>
+                                    <ComboBox ItemsSource="{Binding ConverterPresets}" DisplayMemberPath="Name" SelectedValuePath="Id" SelectedValue="{Binding SelectedConverterPresetId}" Margin="0,8,0,18" />
                                     <TextBlock Text="Quality" Foreground="#21D4FD" FontWeight="Bold" />
-                                    <Slider Minimum="1" Maximum="100" Value="82" Margin="0,8,0,18" />
-                                    <TextBlock Text="Post-download actions support renaming templates, organized folders, and script hooks in the app model." Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" />
+                                    <Slider Minimum="1" Maximum="100" Value="{Binding ConverterQuality}" Margin="0,8,0,18" />
+                                    <TextBlock Text="Converts one local file at a time with ffmpeg. Output goes to the output folder on the New Download tab, with '-converted' in the name." Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" />
                                     <TextBlock Text="{Binding CodecStatus}" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,18,0,0" />
                                 </StackPanel>
                             </Grid>
@@ -413,17 +419,16 @@
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Margin="0,0,18,0">
                                     <TextBlock Text="Automation" Foreground="{StaticResource TextBrush}" FontSize="20" FontWeight="Bold" />
-                                    <CheckBox Content="Monitor clipboard for media URLs" Foreground="{StaticResource TextBrush}" Margin="0,14,0,0" />
-                                    <CheckBox Content="Enable scheduled off-peak downloads" Foreground="{StaticResource TextBrush}" Margin="0,8,0,0" />
-                                    <CheckBox Content="Portable mode settings" Foreground="{StaticResource TextBrush}" Margin="0,8,0,0" />
-                                    <TextBlock Text="Request delay" Foreground="#21D4FD" FontWeight="Bold" Margin="0,20,0,8" />
-                                    <Slider Minimum="0" Maximum="10" Value="1" />
+                                    <CheckBox Content="Monitor clipboard for media URLs" Foreground="{StaticResource TextBrush}" IsChecked="{Binding MonitorClipboard}" Margin="0,14,0,0" />
+                                    <CheckBox Content="Enable scheduled off-peak downloads (22:00-06:00)" Foreground="{StaticResource TextBrush}" IsChecked="{Binding ScheduledDownloads}" Margin="0,8,0,0" />
+                                    <CheckBox Content="Store installed tools beside the app (portable)" Foreground="{StaticResource TextBrush}" IsChecked="{Binding PortableTools}" Margin="0,8,0,0" />
+                                    <TextBlock Text="Crawler request delay (milliseconds)" Foreground="#21D4FD" FontWeight="Bold" Margin="0,20,0,8" />
+                                    <Slider Minimum="0" Maximum="2000" Value="{Binding CrawlerDelayMilliseconds}" />
                                 </StackPanel>
                                 <StackPanel Grid.Column="1">
                                     <TextBlock Text="Privacy and security" Foreground="{StaticResource TextBrush}" FontSize="20" FontWeight="Bold" />
-                                    <CheckBox Content="Encrypt stored login secrets with Windows DPAPI" Foreground="{StaticResource TextBrush}" IsChecked="True" Margin="0,14,0,0" />
-                                    <CheckBox Content="Respect robots.txt during crawler runs" Foreground="{StaticResource TextBrush}" IsChecked="True" Margin="0,8,0,0" />
-                                    <CheckBox Content="Import Netscape cookies when needed" Foreground="{StaticResource TextBrush}" Margin="0,8,0,0" />
+                                    <CheckBox Content="Respect robots.txt during crawler runs" Foreground="{StaticResource TextBrush}" IsChecked="{Binding RespectRobotsTxt}" Margin="0,14,0,0" />
+                                    <TextBlock Text="No login secrets are stored in SpectraGrab. Provider credentials are referenced only by environment variable, and cookies are taken from the browser or a cookies.txt file you choose on the New Download tab." Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,14,0,0" />
                                     <TextBlock Text="No telemetry is wired. Downloads and crawler runs stay local unless the user opens a URL." Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" Margin="0,20,0,0" />
                                     <TextBlock Text="Persistent provider and add-in configuration" Foreground="#21D4FD" FontWeight="Bold" Margin="0,20,0,6" />
                                     <TextBlock Text="{Binding IntegrationConfigStatus}" Foreground="{StaticResource MutedTextBrush}" TextWrapping="Wrap" />
