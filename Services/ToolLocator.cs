@@ -18,13 +18,28 @@ public sealed class ToolLocator : IToolLocator
             return besideApplication;
         }
 
+        // User-writable tool home used by ToolBootstrapService. Checking it
+        // before PATH means a one-click install works on the next launch
+        // (and after a refresh) without admin rights or a PATH edit.
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var spectraGrabBin = Path.Combine(localAppData, "SpectraGrab", "bin", executableName);
+        if (File.Exists(spectraGrabBin))
+        {
+            return spectraGrabBin;
+        }
+
+        var portableBin = Path.Combine(AppContext.BaseDirectory, "bin", executableName);
+        if (File.Exists(portableBin))
+        {
+            return portableBin;
+        }
+
         var direct = RunWhere(executableName);
         if (!string.IsNullOrWhiteSpace(direct))
         {
             return direct;
         }
 
-        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var wingetLink = Path.Combine(localAppData, "Microsoft", "WinGet", "Links", executableName);
         return File.Exists(wingetLink) ? wingetLink : null;
     }

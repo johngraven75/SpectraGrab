@@ -15,6 +15,9 @@ public partial class App : Application
 
         var services = new ServiceCollection();
         services.AddSingleton<IToolLocator, ToolLocator>();
+        services.AddSingleton<IAppSettingsService, AppSettingsService>();
+        services.AddSingleton<IToolBootstrapService, ToolBootstrapService>();
+        services.AddSingleton<IConverterService, ConverterService>();
         services.AddSingleton<ISitePluginCatalog, SitePluginCatalog>();
         services.AddSingleton<IJDownloaderService, JDownloaderService>();
         services.AddSingleton<ICodecPackService, CodecPackService>();

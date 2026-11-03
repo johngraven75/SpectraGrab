@@ -15,12 +15,14 @@ public sealed class HlsYtdlpService(
     YtdlpService inner,
     IToolLocator toolLocator) : IYtdlpService
 {
-    private readonly string? ytDlpPath = toolLocator.Find("yt-dlp.exe") ?? toolLocator.Find("yt-dlp");
-    private readonly string? ffmpegPath = toolLocator.Find("ffmpeg.exe") ?? toolLocator.Find("ffmpeg");
+    // Resolved per operation so tools installed after launch are usable
+    // without a restart (see YtdlpService for the same fix).
+    private string? FindYtDlp() => toolLocator.Find("yt-dlp.exe") ?? toolLocator.Find("yt-dlp");
+    private string? FindFfmpeg() => toolLocator.Find("ffmpeg.exe") ?? toolLocator.Find("ffmpeg");
 
     public bool IsReady => inner.IsReady;
 
-    public string Status => inner.Status + (ffmpegPath is null
+    public string Status => inner.Status + (FindFfmpeg() is null
         ? " | FFmpeg not found: native HLS remains available, but FFmpeg HLS fallback is disabled."
         : " | HLS: native fragments + FFmpeg fallback ready.");
 
@@ -55,6 +57,8 @@ public sealed class HlsYtdlpService(
         }
         catch (InvalidOperationException ex) when (ShouldTryHlsFallback(item.Url, ex.Message))
         {
+            var ytDlpPath = FindYtDlp();
+            var ffmpegPath = FindFfmpeg();
             if (ytDlpPath is null || ffmpegPath is null)
             {
                 throw new InvalidOperationException(
@@ -63,7 +67,7 @@ public sealed class HlsYtdlpService(
             }
 
             item.Status = "HLS fallback";
-            await DownloadWithFfmpegHlsAsync(item, outputFolder, format, options, cancellationToken);
+            await DownloadWithFfmpegHlsAsync(item, outputFolder, format, options, ytDlpPath, ffmpegPath, cancellationToken);
         }
     }
 
@@ -72,6 +76,8 @@ public sealed class HlsYtdlpService(
         string outputFolder,
         string format,
         DownloadOptions options,
+        string ytDlpPath,
+        string ffmpegPath,
         CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(outputFolder);
@@ -82,7 +88,7 @@ public sealed class HlsYtdlpService(
 
         var args = new List<string>
         {
-            "--ffmpeg-location", ffmpegPath!,
+            "--ffmpeg-location", ffmpegPath,
             "--newline",
             "--progress",
             "--continue",
@@ -109,7 +115,7 @@ public sealed class HlsYtdlpService(
         {
             StartInfo = new ProcessStartInfo
             {
-                FileName = ytDlpPath!,
+                FileName = ytDlpPath,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,

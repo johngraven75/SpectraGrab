@@ -17,20 +17,27 @@ public interface IYtdlpService
 
 public sealed partial class YtdlpService(IToolLocator toolLocator, ISitePluginCatalog pluginCatalog, ICodecProfileCatalog codecProfiles) : IYtdlpService
 {
-    private readonly string? ytDlpPath = toolLocator.Find("yt-dlp.exe") ?? toolLocator.Find("yt-dlp");
-    private readonly string? ffmpegPath = toolLocator.Find("ffmpeg.exe") ?? toolLocator.Find("ffmpeg");
+    // Resolved on every operation, not once at construction. Previously a
+    // tool installed after launch was invisible until restart, which made
+    // "install then download" fail from boot. Locating again is cheap
+    // compared with running yt-dlp itself.
+    private string? FindYtDlp() => toolLocator.Find("yt-dlp.exe") ?? toolLocator.Find("yt-dlp");
+    private string? FindFfmpeg() => toolLocator.Find("ffmpeg.exe") ?? toolLocator.Find("ffmpeg");
 
-    public bool IsReady => ytDlpPath is not null;
+    public bool IsReady => FindYtDlp() is not null;
 
-    public string Status => ytDlpPath is null
-        ? "yt-dlp was not found. Install yt-dlp to enable real downloads."
-        : $"yt-dlp ready at {ytDlpPath}";
+    public string Status => FindYtDlp() is null
+        ? "yt-dlp was not found. Use 'Install missing tools' to fetch yt-dlp and ffmpeg."
+        : $"yt-dlp ready at {FindYtDlp()}";
 
     public async Task<VideoMetadata> InspectAsync(string url, DownloadOptions options, CancellationToken cancellationToken)
     {
+        var ytDlpPath = FindYtDlp();
         if (ytDlpPath is null)
         {
-            return FallbackMetadata(url, "yt-dlp is missing");
+            // Do not return a fake "URL ready" placeholder: that made the UI
+            // report Ready for a download that could never run.
+            throw new InvalidOperationException("yt-dlp was not found. Use 'Install missing tools' on the New Download tab, then inspect again.");
         }
 
         var args = BuildSiteArgs(url, options);
@@ -94,9 +101,17 @@ public sealed partial class YtdlpService(IToolLocator toolLocator, ISitePluginCa
 
     public async Task DownloadAsync(DownloadItem item, string outputFolder, string format, DownloadOptions options, CancellationToken cancellationToken)
     {
+        var ytDlpPath = FindYtDlp();
         if (ytDlpPath is null)
         {
-            throw new InvalidOperationException("yt-dlp was not found.");
+            throw new InvalidOperationException("yt-dlp was not found. Use 'Install missing tools' on the New Download tab, then retry.");
+        }
+
+        var ffmpegPath = FindFfmpeg();
+        var normalizedFormat = NormalizeFormat(format);
+        if (ffmpegPath is null && normalizedFormat == "bestvideo+bestaudio/best")
+        {
+            throw new InvalidOperationException("ffmpeg is required to merge video and audio for this format. Use 'Install missing tools' to fetch ffmpeg, or choose a single-file format instead.");
         }
 
         Directory.CreateDirectory(outputFolder);
@@ -352,20 +367,6 @@ public sealed partial class YtdlpService(IToolLocator toolLocator, ISitePluginCa
             throw;
         }
     }
-
-    private static VideoMetadata FallbackMetadata(string url, string reason) => new()
-    {
-        Url = url,
-        Title = "URL ready",
-        Uploader = reason,
-        Duration = "Unknown",
-        Site = Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Host : "Direct",
-        Formats =
-        [
-            new("best", "Best quality", "auto", "best", "maximum", reason, null),
-            new("bestaudio/best", "Audio only", "mp3", "best audio", "audio", reason, null)
-        ]
-    };
 
     private static string BuildResolution(JsonElement format)
     {
